@@ -7,22 +7,23 @@ from mwr.util.toTile import reform3D,DataWrapper
 import mrcfile
 from mwr.util.image import *
 
-def predict(model,weight,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', if_percentile=True):
-
-    ngpus = len(gpuID.split(','))
+def predict(model,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', if_percentile=True):
+    import os
     import keras
-    from keras.models import model_from_json
-    json_file = open(model, 'r')
-    loaded_model_json = json_file.read()
-    json_file.close()
-    model = model_from_json(loaded_model_json)
-    print(gpuID)
+    import logging
+    from keras.models import load_model
+
+    logging.basicConfig(filename='myapp.log', level=logging.INFO)
+    logging
+    os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"]=args.gpuID
+    ngpus = len(gpuID.split(','))
+    model = load_model(args.model)
+    logger.info('gpuID:{}'.format(args.gpuID))
     if ngpus >1:
         from keras.utils import multi_gpu_model
         model = multi_gpu_model(model, gpus=ngpus, cpu_merge=True, cpu_relocation=False)
-    model.load_weights(weight)
-
-    print("Loaded model from disk")
+        print("Loaded model from disk")
 
     N = batchsize * ngpus
 
@@ -60,16 +61,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('mrc_file', type=str, default=None, help='Your mrc file')
     parser.add_argument('output_file', type=str, default=None, help='output mrc file')
-    parser.add_argument('--weight', type=str, default='results/modellast.h5' ,help='Weight file name to save')
+    # parser.add_argument('--weight', type=str, default='results/modellast.h5' ,help='Weight file name to save')
     parser.add_argument('--model', type=str, default='model.json' ,help='Data file name to save')
     parser.add_argument('--gpuID', type=str, default='0,1,2,3', help='number of gpu for training')
     parser.add_argument('--cubesize', type=int, default=64, help='size of cube')
     parser.add_argument('--cropsize', type=int, default=96, help='crop size larger than cube for overlapping tile')
     parser.add_argument('--batchsize', type=int, default=8, help='batch size')
 
-    args = parser.parse_args()
-    import os
-    os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"]=args.gpuID 
+    args = parser.parse_args() 
 
-    predict(args.model,args.weight,args.mrc_file,args.output_file, cubesize=args.cubesize, cropsize=args.cropsize, batchsize=args.batchsize, gpuID=args.gpuID, )
+    predict(args.model,args.mrc_file,args.output_file, cubesize=args.cubesize, cropsize=args.cropsize, batchsize=args.batchsize, gpuID=args.gpuID, )
