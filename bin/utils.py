@@ -2,16 +2,26 @@
 
 '''
 from mwr.preprocessing.cubes import create_cube_seeds, crop_cubes
+import mrcfile
+import numpy as np
+from mwr.util.norm import normalize
+
 def gene_train_data(settings):
     with mrcfile.open(settings.orig_tomo) as o:
         orig_tomo=o.data 
-    
+    orig_tomo = normalize(-orig_tomo,percentile = True)
     with mrcfile.open(settings.mask_tomo) as m:
         mask_tomo=m.data
+
+    if settings.sample_mask != None:
+        with mrcfile.open(settings.sample_mask) as sm:
+            sample_mask = sm.data
+    else:
+        sample_mask = np.ones(orig_tomo.shape)
     #create random center seeds and crop subtomos
     #10% ncube will be saved as test_set
-    seeds1=create_cube_seeds(orig_tomo,settings.ncube,settings.cropsize)
-    seeds2=create_cube_seeds(orig_tomo,int(settings.ncube*0.1),settings.cropsize)
+    seeds1=create_cube_seeds(orig_tomo,settings.ncube,settings.cropsize,mask = sample_mask)
+    seeds2=create_cube_seeds(orig_tomo,int(settings.ncube*0.1),settings.cropsize,mask = sample_mask)
 
     orig_subtomos=crop_cubes(orig_tomo,seeds1,settings.cropsize)
     mask_subtomos=crop_cubes(mask_tomo,seeds1,settings.cropsize)

@@ -3,6 +3,7 @@
 #training a model to map from original tomo to vesicle binary mask
 import mrcfile
 from mwr.training.train import train3D_seq
+# from mwr.models.unet2 import train3D_seq
 import numpy as np
 from utils import gene_train_data
 
@@ -23,4 +24,12 @@ if __name__=='__main__':
                 os.makedirs('{}/{}'.format(settings.data_folder, d))
         gene_train_data(settings)
 
-    history = train3D_seq('results/model_sgmt.h5', data_dir = settings.data_folder, epochs = settings.epochs, steps_per_epoch = settings.steps_per_epoch,  batch_size = settings.batch_size, n_gpus = settings.ngpus, loss='binary_crossentropy',last_activation = 'sigmoid')
+    history = train3D_seq(settings.model_name, data_dir = settings.data_folder, 
+    epochs = settings.epochs, steps_per_epoch = settings.steps_per_epoch,  
+    batch_size = settings.batch_size, n_gpus = settings.ngpus, 
+    loss='binary_crossentropy',last_activation = 'sigmoid',residual = False)
+
+    # history = train3D_seq(settings.model_name, data_folder = settings.data_folder, 
+    # epochs = settings.epochs, steps_per_epoch = settings.steps_per_epoch,  
+    # batch_size = settings.batch_size, n_gpus = settings.ngpus, 
+    # loss='binary_crossentropy')

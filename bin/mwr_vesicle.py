@@ -2,6 +2,7 @@
 import os
 import mrcfile
 import numpy as np
+import sys
 def run_mwr_predict(orig,outfile,model,weight,cubesize,cropsize,gpuID,batchsize):
     cmd = 'mwr3D_predict {} {} --model {} --weight {} --cubesize {} --cropsize {} --gpuID {} --batchsize {}'.format(orig, outfile, model, weight, cubesize, cropsize, gpuID, batchsize)
 
@@ -12,7 +13,7 @@ def predict_mask(mwr_tomo,outmask,model,weight,cubesize,cropsize,gpuID,batchsize
 
     os.system(cmd)
 
-def morph_process(mask,elem_len=9):
+def morph_process(mask,elem_len=9,save_labeled=None):
     # 1. closing and opening process of vesicle mask. 2. label the vesicles. 3. extract labeled individual vesicle vectors and output them.
 
     from skimage.morphology import opening, closing, erosion, cube
@@ -22,31 +23,52 @@ def morph_process(mask,elem_len=9):
     # transform mask into uint8
     bimask = np.round(tomo_mask).astype(np.uint8)
     closing_opening = closing(opening(bimask,cube(elem_len)),cube(elem_len))
+    closing_opening = closing(bimask,cube(elem_len))
     # label the vesicles
     labeled = label(closing_opening)
-    labeled_boundary = labeled - erosion(label,cube(3))
+    if save_labeled is not None:
+        with mrcfile.new(save_labeled,overwrite=True) as f:
+            f.set_data(labeled.astype(np.uint8))
+
+    #for hollow labeled vesicles do not extract boundaries
+    #labeled_boundary = labeled - erosion(label,cube(3))
+    labeled_boundary = labeled
     #the number of labeled vesicle
-    num = np.max(label)
+    num = np.max(labeled)
     #vesicle list elements: np.where return point cloud positions whose shape is (3,N)
     vesicle_list = []
-    for i in range(num):
-        cloud = np.array(np.where(labeled_boundary == i+1))
+    for i in range(1,num+1):
+        cloud = np.array(np.where(labeled_boundary == i))
         cloud = np.swapaxes(cloud,0,1)
         vesicle_list.append(cloud)
     
     return vesicle_list
 
 def vesicle_measure(vesicle_list,outfile):
-    sys.path.append('/storage/heng/tomoSgmt/ellipsoid_fit_python/')
+    sys.path.append('/storage/heng/tomoSgmt/bin/ellipsoid_fit_python/')
     import ellipsoid_fit as ef 
+    import json
     results = []
-    for i in vesicle_list:
-        [center, evecs, radii]=ef.ellipsoid_fit(i)
-        info={'name':'vesicle_'+str(i),'center':center,'radii':radii,'evecs':evecs}
-        results.append(info)
+    for i in range(len(vesicle_list)):
+        print('fitting vesicle_',i)
+        try:
+            [center, evecs, radii]=ef.ellipsoid_fit(vesicle_list[i])            
+            info={'name':'vesicle_'+str(i),'center':center.tolist(),'radii':radii.tolist(),'evecs':evecs.tolist()}
+            results.append(info)
+        except:
+            print('bad vescle cloud points')
 
-    vesilce_info={'vesicles':results}
-    return vesilce_info
+    vesicle_info={'vesicles':results}
+    if outfile is not None:
+        with open(outfile,"w") as out:
+            json.dump(vesicle_info,out)
+    return vesicle_info
+    
+def vesicle2json(vesicle_info,filename):
+    import json
+    with open(filename,"w") as out:
+        json.dump(vesicle_info,out,)
+        
     
 def str2bool(v):
     if isinstance(v, bool):
@@ -101,4 +123,4 @@ if __name__ == "__main__":
     vesicle_list = morph_process(args.mask_file)
     vesicle_info = vesicle_measure(vesicle_list,args.output_file)
     with open(outfile, 'w') as fp:
-        json.dump(vesicle_info, fp)
+        json.dump(vesicle_info, fp,indent=4)

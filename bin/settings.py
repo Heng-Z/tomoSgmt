@@ -1,5 +1,6 @@
 orig_tomo = ''
 mask_tomo = ''
+sample_mask = None
 
 cropped = False
 ncube = 800
@@ -11,5 +12,5 @@ epochs = 30
 batch_size = 8
 steps_per_epoch = 100
 
-loss='mse'
-last_activation='linear'
+# loss='mse'
+# last_activation='linear'

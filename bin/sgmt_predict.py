@@ -2,28 +2,28 @@
 
 import numpy as np
 from mwr.util.norm import normalize
-from mwr.util.image import norm_save,toUint8,toUint16
 from mwr.util.toTile import reform3D,DataWrapper
 import mrcfile
 from mwr.util.image import *
-
+import tensorflow as tf
 def predict(model,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', if_percentile=True):
     import os
-    import keras
+    # import tensorflow.keras
     import logging
-    from keras.models import load_model
+    from tensorflow.keras.models import load_model
 
     logging.basicConfig(filename='myapp.log', level=logging.INFO)
-    logging
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"]=args.gpuID
     ngpus = len(gpuID.split(','))
-    model = load_model(args.model)
-    logger.info('gpuID:{}'.format(args.gpuID))
+    # model = load_model(args.model)
+    logging.info('gpuID:{}'.format(args.gpuID))
     if ngpus >1:
-        from keras.utils import multi_gpu_model
-        model = multi_gpu_model(model, gpus=ngpus, cpu_merge=True, cpu_relocation=False)
-        print("Loaded model from disk")
+        strategy = tf.distribute.MirroredStrategy()
+        with strategy.scope():
+            model = load_model(args.model)
+    else:
+        model = load_model(args.model)
 
     N = batchsize * ngpus
 
@@ -33,7 +33,7 @@ def predict(model,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', i
             print('predicting:{}'.format(root_name))
             with mrcfile.open(mrc) as mrcData:
                 real_data = mrcData.data.astype(np.float32)
-            real_data = normalize(real_data,percentile=if_percentile)
+            real_data = normalize(-real_data,percentile=if_percentile)
             data=np.expand_dims(real_data,axis=-1)
             reform_ins = reform3D(data)
             data = reform_ins.pad_and_crop_new(cubesize,cropsize)
@@ -51,7 +51,7 @@ def predict(model,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', i
 
             outData = outData[0:num_batches]
             outData=reform_ins.restore_from_cubes_new(outData.reshape(outData.shape[0:-1]), cubesize, cropsize)
-            outData=np.around(outData).astype(np.float32)
+            outData=np.around(outData).astype(np.uint8)
             with mrcfile.new(output, overwrite=True) as output_mrc:
                 output_mrc.set_data(outData)
     return 0
