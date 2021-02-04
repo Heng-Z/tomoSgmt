@@ -6,6 +6,7 @@ from mwr.util.toTile import reform3D,DataWrapper
 import mrcfile
 from mwr.util.image import *
 import tensorflow as tf
+from tomoSgmt.bin.utils import Patch
 def predict(model,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', if_percentile=True):
     import os
     # import tensorflow.keras
@@ -56,6 +57,38 @@ def predict(model,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', i
                 output_mrc.set_data(outData)
     return 0
 
+def predict_new(mrc,output,model,sidelen=128,neighbor=5,batch_size=8,gpuID='0'):
+    import os
+    import logging
+    from tensorflow.keras.models import load_model
+
+    logging.basicConfig(filename='myapp.log', level=logging.INFO)
+    os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"]=gpuID
+    ngpus = len(gpuID.split(','))
+    # model = load_model(args.model)
+    logging.info('gpuID:{}'.format(gpuID))
+    if ngpus >1:
+        strategy = tf.distribute.MirroredStrategy()
+        with strategy.scope():
+            kmodel = load_model(model)
+    else:
+        kmodel = load_model(model)
+    
+    with mrcfile.open(mrc) as mrcData:
+        real_data = mrcData.data.astype(np.float32)
+        real_data = normalize(real_data,percentile=False)    
+    p = Patch(real_data)
+    patch_list = p.to_patches(sidelen=sidelen,neighbor=neighbor)
+    data_to_predict =np.swapaxes(np.array(patch_list),1,-1)
+    print(data_to_predict.shape)
+    patch_predicted = kmodel.predict(data_to_predict,batch_size=batch_size,verbose=1)
+    restored_tomo = p.restore_tomo(np.swapaxes(patch_predicted,1,-1))
+    with mrcfile.new(output, overwrite=True) as output_mrc:
+        output_mrc.set_data(np.round(restored_tomo).astype(np.uint8))
+        
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Process some integers.')
@@ -70,4 +103,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args() 
 
-    predict(args.model,args.mrc_file,args.output_file, cubesize=args.cubesize, cropsize=args.cropsize, batchsize=args.batchsize, gpuID=args.gpuID, )
+    # predict(args.model,args.mrc_file,args.output_file, cubesize=args.cubesize, cropsize=args.cropsize, batchsize=args.batchsize, gpuID=args.gpuID, )
+
+    predict_new(args.mrc_file,args.output_file,args.model,sidelen=128,neighbor=5)
