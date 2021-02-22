@@ -47,7 +47,7 @@ def gene_train_data(settings):
         with mrcfile.new('{}/test_y/{}_{:0>6d}.mrc'.format('./data', 'test_y',j), overwrite=True) as output_mrc:
             output_mrc.set_data(s) 
 
-def gene_2d_training_data(tomo,mask,sample_mask=None,num=100,sidelen=128,neighbor=5):
+def gene_2d_training_data(tomo,mask,sample_mask=None,num=100,sidelen=128,neighbor_in=5, neighbor_out=1):
     with mrcfile.open(tomo) as o:
         orig_tomo=o.data 
     tomo = normalize(orig_tomo,percentile = False)
@@ -64,13 +64,13 @@ def gene_2d_training_data(tomo,mask,sample_mask=None,num=100,sidelen=128,neighbo
         sample_mask=np.ones(sp)
     else:
         sample_mask=sample_mask
-    if os.path.isdir('./data'):
-        os.system('mv {} {}'.format('./data', './data'+'~'))
-    os.makedirs('./data')
-    dirs_tomake = ['train_x','train_y', 'test_x', 'test_y']
-    for d in dirs_tomake:
-        os.makedirs('{}/{}'.format('./data', d))
-    border_slices = tuple([slice(s // 2, d - s + s // 2 + 1) for s, d in zip((neighbor,sidelen,sidelen), sp)])
+    # if os.path.isdir('./data'):
+    #     os.system('mv {} {}'.format('./data', './data'+'~'))
+    # os.makedirs('./data')
+    # dirs_tomake = ['train_x','train_y', 'test_x', 'test_y']
+    # for d in dirs_tomake:
+    #     os.makedirs('{}/{}'.format('./data', d))
+    border_slices = tuple([slice(s // 2, d - s + s // 2 + 1) for s, d in zip((neighbor_in,sidelen,sidelen), sp)])
     valid_inds = np.where(sample_mask[border_slices])
     valid_inds = [v + s.start for s, v in zip(border_slices, valid_inds)]
     sample_inds1 = np.random.choice(len(valid_inds[0]), num, replace=len(valid_inds[0]) < num)
@@ -81,10 +81,10 @@ def gene_2d_training_data(tomo,mask,sample_mask=None,num=100,sidelen=128,neighbo
     seeds2 = (rand_inds2[0],rand_inds2[1], rand_inds2[2])
     
 
-    X_train = np.swapaxes(crop_patches(tomo,seeds1,sidelen=sidelen,neighbor=neighbor),1,-1)
-    Y_train = np.swapaxes(crop_patches(mask,seeds1,sidelen=sidelen,neighbor=1),1,-1)
-    X_test = np.swapaxes(crop_patches(tomo,seeds2,sidelen=sidelen,neighbor=neighbor),1,-1)
-    Y_test = np.swapaxes(crop_patches(mask,seeds2,sidelen=sidelen,neighbor=1),1,-1)
+    X_train = np.swapaxes(crop_patches(tomo,seeds1,sidelen=sidelen,neighbor=neighbor_in),1,-1)
+    Y_train = np.swapaxes(crop_patches(mask,seeds1,sidelen=sidelen,neighbor=neighbor_out),1,-1)
+    X_test = np.swapaxes(crop_patches(tomo,seeds2,sidelen=sidelen,neighbor=neighbor_in),1,-1)
+    Y_test = np.swapaxes(crop_patches(mask,seeds2,sidelen=sidelen,neighbor=neighbor_out),1,-1)
 
     print(X_train.shape)
     # for j,s in enumerate(X_train):
@@ -116,48 +116,60 @@ class Patch:
         self.sp = tomo.shape
         self.tomo = tomo
     
-    def to_patches(self,sidelen=128,neighbor=5):
-        n1 = self.sp[1]//sidelen + 1
-        n2 = self.sp[2]//sidelen + 1
+    def to_patches(self,sidelen=128,overlap_rate = 0.25,neighbor=5):
+        effect_len = int(sidelen * (1-overlap_rate))
+        n1 = (self.sp[1] - sidelen)//effect_len + 2
+        n2 = (self.sp[2] - sidelen)//effect_len + 2
         n0 = self.sp[0]
-        pad_len1 = n1 * sidelen - self.sp[1]
-        pad_len2 = n2 * sidelen - self.sp[2]
+        pad_len1 = (n1-1)*effect_len + sidelen - self.sp[1]
+        pad_len2 = (n2-1)*effect_len + sidelen - self.sp[2]
         tomo_padded = np.pad(self.tomo,((neighbor//2, neighbor-neighbor//2),
                                         (pad_len1//2,pad_len1 - pad_len1//2),
                                         (pad_len2//2,pad_len2 - pad_len2//2)),'symmetric')
         patch_list = []
-        for k in range(neighbor//2+1,neighbor//2+self.sp[0]):
+        print('padded shape',tomo_padded.shape)
+        for k in range(neighbor//2,neighbor//2+self.sp[0]):
             for i in range(n1):
                 for j in range(n2):
                     one_patch = tomo_padded[k-neighbor//2:k+neighbor-neighbor//2,
-                                            i*sidelen:(i+1)*sidelen,
-                                            j*sidelen:(j+1)*sidelen]
+                                            i*effect_len:i * effect_len + sidelen,
+                                            j*effect_len:j * effect_len + sidelen]
                     
                     patch_list.append(one_patch)
+        print('one patch shape',one_patch.shape)
         self.n12 = (n1,n2)
         self.sidelen = sidelen
+        self.effect_len = effect_len
         self.neighbor = neighbor
         self.padded_dim = tomo_padded.shape
 
         return patch_list
 
-    def restore_tomo(self,patch_list):
+    def restore_tomo(self,patch_list,neighbor=1):
         (n1,n2) = self.n12
         sidelen = self.sidelen
-        neighbor = self.neighbor
-        tomo_padded = np.zeros(self.padded_dim)
-        for k in range(neighbor//2+1,neighbor//2+self.sp[0]):
+        effect_len = self.effect_len
+        sp = self.sp
+        # neighbor = self.neighbor
+        # tomo_padded = np.zeros(self.padded_dim)
+        tomo_padded = np.zeros((sp[0] + neighbor-neighbor%2,self.padded_dim[1],self.padded_dim[2]))
+        for k in range(neighbor//2,neighbor//2+self.sp[0]):
             for i in range(n1):
                 for j in range(n2):
-                    tomo_padded[ k,
-                                i*sidelen:(i+1)*sidelen,
-                                j*sidelen:(j+1)*sidelen] = patch_list[(k-neighbor//2-1)*n1*n2 + i*n2 + j]
+                    one_patch = tomo_padded[ k-neighbor//2:k-neighbor//2+neighbor,
+                                 i*effect_len:i * effect_len + sidelen,
+                                j*effect_len:j * effect_len + sidelen]
+                    print('brop one_patch',one_patch.shape)
+                    tomo_padded[ k-neighbor//2:k-neighbor//2+neighbor,
+                                 i*effect_len:i * effect_len + sidelen,
+                                j*effect_len:j * effect_len + sidelen] += patch_list[(k-neighbor//2)*n1*n2 + i*n2 + j]
             print('k and index:',k,k*n1*n2 + i*n2 + j)
-        pad_len1 = n1 * sidelen - self.sp[1]
-        pad_len2 = n2 * sidelen - self.sp[2]
-        restored_tomo = tomo_padded[neighbor//2+1 : neighbor//2+self.sp[0],
-                                pad_len1//2 +1 : pad_len1//2 + self.sp[1],
-                                pad_len2//2 + 1 : pad_len2//2 + self.sp[2],
+        # tomo_padded = (tomo_padded>0).astype(np.uint8)
+        pad_len1 = (n1-1)*effect_len + sidelen - self.sp[1]
+        pad_len2 = (n2-1)*effect_len + sidelen - self.sp[2]
+        restored_tomo = tomo_padded[neighbor//2 : neighbor//2+self.sp[0],
+                                pad_len1//2  : pad_len1//2 + self.sp[1],
+                                pad_len2//2  : pad_len2//2 + self.sp[2],
                                 ]
 
         return restored_tomo

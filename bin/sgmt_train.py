@@ -10,6 +10,13 @@ from tomoSgmt.bin.utils import gene_train_data, gene_2d_training_data
 from tomoSgmt.unet.unet2D import build_compiled_model
 import tensorflow as tf
 if __name__=='__main__':
+
+    ##########Hyper-parameters:
+    neighbor_in = 7
+    neighbor_out = 3
+    sidelen=128
+    #########
+
     import os
     import sys
     sys.path.insert(0,os.getcwd()) 
@@ -25,13 +32,11 @@ if __name__=='__main__':
     #     for d in dirs_tomake:
     #         os.makedirs('{}/{}'.format(settings.data_folder, d))
     #     # gene_train_data(settings)
-    train_data, test_data = gene_2d_training_data(settings.orig_tomo,settings.mask_tomo,sample_mask=settings.sample_mask,num=400,sidelen=128,neighbor=5)
+    train_data, test_data = gene_2d_training_data(settings.orig_tomo,settings.mask_tomo,sample_mask=settings.sample_mask,num=400,sidelen=sidelen,neighbor_in=neighbor_in,neighbor_out = neighbor_out)
 
-    model = build_compiled_model()
-    model.summary()
     strategy  = tf.distribute.MirroredStrategy()
     with strategy.scope():
-        model = build_compiled_model()
+        model = build_compiled_model(sidelen=sidelen,neighbor_in=neighbor_in,neighbor_out = neighbor_out)
     model.summary()
     model.fit(train_data[0],train_data[1], validation_data=test_data,
                                   epochs=settings.epochs, steps_per_epoch=settings.steps_per_epoch, verbose=1)

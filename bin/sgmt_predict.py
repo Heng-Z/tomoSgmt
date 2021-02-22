@@ -57,7 +57,7 @@ def predict(model,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', i
                 output_mrc.set_data(outData)
     return 0
 
-def predict_new(mrc,output,model,sidelen=128,neighbor=5,batch_size=8,gpuID='0'):
+def predict_new(mrc,output,model,sidelen=128,neighbor_in=5,neighbor_out=1, batch_size=8,gpuID='0'):
     import os
     import logging
     from tensorflow.keras.models import load_model
@@ -79,13 +79,13 @@ def predict_new(mrc,output,model,sidelen=128,neighbor=5,batch_size=8,gpuID='0'):
         real_data = mrcData.data.astype(np.float32)
         real_data = normalize(real_data,percentile=False)    
     p = Patch(real_data)
-    patch_list = p.to_patches(sidelen=sidelen,neighbor=neighbor)
+    patch_list = p.to_patches(sidelen=sidelen,neighbor=neighbor_in)
     data_to_predict =np.swapaxes(np.array(patch_list),1,-1)
     print(data_to_predict.shape)
     patch_predicted = kmodel.predict(data_to_predict,batch_size=batch_size,verbose=1)
-    restored_tomo = p.restore_tomo(np.swapaxes(patch_predicted,1,-1))
+    restored_tomo = p.restore_tomo(np.swapaxes(patch_predicted,1,-1),neighbor=neighbor_out)
     with mrcfile.new(output, overwrite=True) as output_mrc:
-        output_mrc.set_data(np.round(restored_tomo).astype(np.uint8))
+        output_mrc.set_data((np.round(restored_tomo).astype(np.uint8)>0).astype(np.uint8))
         
 
 
@@ -100,9 +100,11 @@ if __name__ == '__main__':
     parser.add_argument('--cubesize', type=int, default=64, help='size of cube')
     parser.add_argument('--cropsize', type=int, default=96, help='crop size larger than cube for overlapping tile')
     parser.add_argument('--batchsize', type=int, default=8, help='batch size')
-
+    parser.add_argument('--neighbor_in', type=int, default=5, help='number of neighbor channels')
+    parser.add_argument('--neighbor_out', type=int, default=1, help='number of neighbor channels')
+    parser.add_argument('--sidelen', type=int, default=128, help='side length during 2D training')
     args = parser.parse_args() 
 
     # predict(args.model,args.mrc_file,args.output_file, cubesize=args.cubesize, cropsize=args.cropsize, batchsize=args.batchsize, gpuID=args.gpuID, )
 
-    predict_new(args.mrc_file,args.output_file,args.model,sidelen=128,neighbor=5)
+    predict_new(args.mrc_file,args.output_file,args.model,sidelen=args.sidelen,neighbor_in=args.neighbor_in,neighbor_out=args.neighbor_out)

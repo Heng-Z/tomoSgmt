@@ -11,14 +11,15 @@ __license__ = "Feel free to copy, I appreciate if you acknowledge Python for Mic
 
 import tensorflow as tf
 
-def build_compiled_model(sidelen=128,neighbor=5):
+def build_compiled_model(sidelen=128,neighbor_in=5,neighbor_out=1):
     #Build the model
     IMG_WIDTH = sidelen
     IMG_HEIGHT = sidelen
-    IMG_CHANNELS = neighbor
+    IMG_CHANNELS = neighbor_in
+    OUT_CHANNELS = neighbor_out
     inputs = tf.keras.layers.Input((IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS))
-    s = tf.keras.layers.Lambda(lambda x: x / 255)(inputs)
-
+    # s = tf.keras.layers.Lambda(lambda x: x / 255)(inputs)
+    s = inputs
     #Contraction path
     c1 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(s)
     c1 = tf.keras.layers.Dropout(0.1)(c1)
@@ -69,7 +70,9 @@ def build_compiled_model(sidelen=128,neighbor=5):
     c9 = tf.keras.layers.Dropout(0.1)(c9)
     c9 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c9)
     
-    outputs = tf.keras.layers.Conv2D(1, (1, 1), activation='sigmoid')(c9)
+
+    
+    outputs = tf.keras.layers.Conv2D(OUT_CHANNELS, (1, 1), activation='sigmoid')(c9)
     
     model = tf.keras.Model(inputs=[inputs], outputs=[outputs])
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
