@@ -2,3 +2,5 @@ example
 results
 mwrvesicle
 tomoset
+utils/*.mrc
+utils/*.rec
