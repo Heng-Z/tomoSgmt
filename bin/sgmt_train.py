@@ -32,7 +32,17 @@ if __name__=='__main__':
     #     for d in dirs_tomake:
     #         os.makedirs('{}/{}'.format(settings.data_folder, d))
     #     # gene_train_data(settings)
-    train_data, test_data = gene_2d_training_data(settings.orig_tomo,settings.mask_tomo,sample_mask=settings.sample_mask,num=400,sidelen=sidelen,neighbor_in=neighbor_in,neighbor_out = neighbor_out)
+    if type(settings.orig_tomo) is list:
+        train_data_list = []
+        test_data_list = []
+        for i in range(len(settings.orig_tomo)):
+            train, test = gene_2d_training_data(settings.orig_tomo[i],settings.mask_tomo[i],sample_mask=settings.sample_mask[i],num=400,sidelen=sidelen,neighbor_in=neighbor_in,neighbor_out = neighbor_out)
+            train_data_list.append(train)
+            test_data_list.append(test)
+        train_data = np.vstack(train_data_list)
+        test_data = np.vstack(test_data_list)
+    else:
+        train_data, test_data = gene_2d_training_data(settings.orig_tomo,settings.mask_tomo,sample_mask=settings.sample_mask,num=400,sidelen=sidelen,neighbor_in=neighbor_in,neighbor_out = neighbor_out)
 
     strategy  = tf.distribute.MirroredStrategy()
     with strategy.scope():

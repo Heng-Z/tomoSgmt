@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 import numpy as np
-from mwr.util.norm import normalize
-from mwr.util.toTile import reform3D,DataWrapper
+from IsoNet.util.norm import normalize
+from IsoNet.util.toTile import reform3D,DataWrapper
 import mrcfile
-from mwr.util.image import *
+from IsoNet.util.image import *
 import tensorflow as tf
 from tomoSgmt.bin.utils import Patch
 def predict(model,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', if_percentile=True):

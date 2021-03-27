@@ -1,10 +1,10 @@
 '''
 
 '''
-from mwr.preprocessing.cubes import create_cube_seeds, crop_cubes
+from IsoNet.preprocessing.cubes import create_cube_seeds, crop_cubes
 import mrcfile
 import numpy as np
-from mwr.util.norm import normalize
+from IsoNet.util.norm import normalize
 import os
 from skimage.morphology import opening,closing, disk
 
