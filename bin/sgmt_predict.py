@@ -7,6 +7,7 @@ import mrcfile
 from IsoNet.util.image import *
 import tensorflow as tf
 from tomoSgmt.bin.utils import Patch
+from tqdm import tqdm
 def predict(model,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', if_percentile=True):
     import os
     # import tensorflow.keras
@@ -26,7 +27,7 @@ def predict(model,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', i
     else:
         model = load_model(args.model)
 
-    N = batchsize * ngpus
+    N = batchsize * ngpus *4
 
     if True:
         if True:
@@ -47,10 +48,14 @@ def predict(model,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', i
             else:
                 append_number = N - num_batches%N
             data = np.append(data, data[0:append_number], axis = 0)
-
-            outData=model.predict(data, batch_size= batchsize,verbose=1)
-
+            num_big_batch = data.shape[0]//N
+            outData = np.zeros(data.shape)
+            for i in tqdm(range(num_big_batch)):
+                outData[i*N:(i+1)*N] = model.predict(data[i*N:(i+1)*N], batch_size= batchsize,verbose=0)
             outData = outData[0:num_batches]
+            # outData=model.predict(data, batch_size= batchsize,verbose=1)
+
+            # outData = outData[0:num_batches]
             outData=reform_ins.restore_from_cubes_new(outData.reshape(outData.shape[0:-1]), cubesize, cropsize)
             outData=np.around(outData).astype(np.uint8)
             with mrcfile.new(output, overwrite=True) as output_mrc:
@@ -74,16 +79,28 @@ def predict_new(mrc,output,model,sidelen=128,neighbor_in=5,neighbor_out=1, batch
             kmodel = load_model(model)
     else:
         kmodel = load_model(model)
-    
+
     with mrcfile.open(mrc) as mrcData:
         real_data = mrcData.data.astype(np.float32)
         real_data = normalize(real_data,percentile=False)    
     p = Patch(real_data)
     patch_list = p.to_patches(sidelen=sidelen,neighbor=neighbor_in)
-    data_to_predict =np.swapaxes(np.array(patch_list),1,-1)
-    print(data_to_predict.shape)
-    patch_predicted = kmodel.predict(data_to_predict,batch_size=batch_size,verbose=1)
-    restored_tomo = p.restore_tomo(np.swapaxes(patch_predicted,1,-1),neighbor=neighbor_out)
+    data =np.swapaxes(np.array(patch_list),1,-1)
+    print(data.shape)
+    N = batch_size * ngpus *4
+    num_batches = data.shape[0]
+    if num_batches%N == 0:
+        append_number = 0
+    else:
+        append_number = N - num_batches%N
+    data = np.append(data, data[0:append_number], axis = 0)
+    num_big_batch = data.shape[0]//N
+    outData = np.zeros((*data.shape[0:-1],neighbor_out))
+    for i in tqdm(range(num_big_batch)):
+        outData[i*N:(i+1)*N] = kmodel.predict(data[i*N:(i+1)*N], batch_size= batch_size,verbose=0)
+    outData = outData[0:num_batches]
+    # patch_predicted = kmodel.predict(data_to_predict,batch_size=batch_size,verbose=1)
+    restored_tomo = p.restore_tomo(np.swapaxes(outData,1,-1),neighbor=neighbor_out)
     with mrcfile.new(output, overwrite=True) as output_mrc:
         output_mrc.set_data((np.round(restored_tomo).astype(np.uint8)>0).astype(np.uint8))
         

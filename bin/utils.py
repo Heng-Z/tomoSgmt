@@ -7,6 +7,19 @@ import numpy as np
 from IsoNet.util.norm import normalize
 import os
 from skimage.morphology import opening,closing, disk
+from tensorflow.keras.utils import Sequence
+
+
+class DataWrapper(Sequence):
+
+   def __init__(self, X,  batch_size):
+       self.X = X
+       self.batch_size = batch_size
+   def __len__(self):
+       return int(np.ceil(len(self.X) / float(self.batch_size)))
+   def __getitem__(self, i):
+       idx = slice(i*self.batch_size,(i+1)*self.batch_size)
+       return self.X[idx]
 
 def gene_train_data(settings):
     with mrcfile.open(settings.orig_tomo) as o:
@@ -159,11 +172,11 @@ class Patch:
                     one_patch = tomo_padded[ k-neighbor//2:k-neighbor//2+neighbor,
                                  i*effect_len:i * effect_len + sidelen,
                                 j*effect_len:j * effect_len + sidelen]
-                    print('brop one_patch',one_patch.shape)
+                    # print('brop one_patch',one_patch.shape)
                     tomo_padded[ k-neighbor//2:k-neighbor//2+neighbor,
                                  i*effect_len:i * effect_len + sidelen,
                                 j*effect_len:j * effect_len + sidelen] += patch_list[(k-neighbor//2)*n1*n2 + i*n2 + j]
-            print('k and index:',k,k*n1*n2 + i*n2 + j)
+            # print('k and index:',k,k*n1*n2 + i*n2 + j)
         # tomo_padded = (tomo_padded>0).astype(np.uint8)
         pad_len1 = (n1-1)*effect_len + sidelen - self.sp[1]
         pad_len2 = (n2-1)*effect_len + sidelen - self.sp[2]
