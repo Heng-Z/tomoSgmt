@@ -1,7 +1,7 @@
-example
-results
-mwrvesicle
-tomoset
+example/
+results/
+mwrvesicle/
+tomoset/
 utils/*.mrc
 utils/*.rec
-utils
+
