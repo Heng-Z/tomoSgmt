@@ -1,66 +1,63 @@
 #!/usr/bin/env python3
 
 import numpy as np
-from IsoNet.util.norm import normalize
-from IsoNet.util.toTile import reform3D,DataWrapper
 import mrcfile
-from IsoNet.util.image import *
 import tensorflow as tf
-from tomoSgmt.bin.utils import Patch
+from tomoSgmt.bin.utils import Patch,normalize
 from tqdm import tqdm
-def predict(model,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', if_percentile=True):
-    import os
-    # import tensorflow.keras
-    import logging
-    from tensorflow.keras.models import load_model
+# def predict(model,mrc,output,cubesize=64, cropsize=96, batchsize=8, gpuID='0', if_percentile=True):
+#     import os
+#     # import tensorflow.keras
+#     import logging
+#     from tensorflow.keras.models import load_model
 
-    logging.basicConfig(filename='myapp.log', level=logging.INFO)
-    os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"]=args.gpuID
-    ngpus = len(gpuID.split(','))
-    # model = load_model(args.model)
-    logging.info('gpuID:{}'.format(args.gpuID))
-    if ngpus >1:
-        strategy = tf.distribute.MirroredStrategy()
-        with strategy.scope():
-            model = load_model(args.model)
-    else:
-        model = load_model(args.model)
+#     logging.basicConfig(filename='myapp.log', level=logging.INFO)
+#     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+#     os.environ["CUDA_VISIBLE_DEVICES"]=args.gpuID
+#     ngpus = len(gpuID.split(','))
+#     # model = load_model(args.model)
+#     logging.info('gpuID:{}'.format(args.gpuID))
+#     if ngpus >1:
+#         strategy = tf.distribute.MirroredStrategy()
+#         with strategy.scope():
+#             model = load_model(args.model)
+#     else:
+#         model = load_model(args.model)
 
-    N = batchsize * ngpus *4
+#     N = batchsize * ngpus *4
 
-    if True:
-        if True:
-            root_name = mrc.split('/')[-1].split('.')[0]
-            print('predicting:{}'.format(root_name))
-            with mrcfile.open(mrc) as mrcData:
-                real_data = mrcData.data.astype(np.float32)
-            real_data = normalize(-real_data,percentile=if_percentile)
-            data=np.expand_dims(real_data,axis=-1)
-            reform_ins = reform3D(data)
-            data = reform_ins.pad_and_crop_new(cubesize,cropsize)
-            #to_predict_data_shape:(n,cropsize,cropsize,cropsize,1)
-            #imposing wedge to every cubes
-            #data=wedge_imposing(data)
-            num_batches = data.shape[0]
-            if num_batches%N == 0:
-                append_number = 0
-            else:
-                append_number = N - num_batches%N
-            data = np.append(data, data[0:append_number], axis = 0)
-            num_big_batch = data.shape[0]//N
-            outData = np.zeros(data.shape)
-            for i in tqdm(range(num_big_batch)):
-                outData[i*N:(i+1)*N] = model.predict(data[i*N:(i+1)*N], batch_size= batchsize,verbose=0)
-            outData = outData[0:num_batches]
-            # outData=model.predict(data, batch_size= batchsize,verbose=1)
+#     if True:
+#         if True:
+#             root_name = mrc.split('/')[-1].split('.')[0]
+#             print('predicting:{}'.format(root_name))
+#             with mrcfile.open(mrc) as mrcData:
+#                 real_data = mrcData.data.astype(np.float32)
+#             real_data = normalize(-real_data,percentile=if_percentile)
+#             data=np.expand_dims(real_data,axis=-1)
+#             reform_ins = reform3D(data)
+#             data = reform_ins.pad_and_crop_new(cubesize,cropsize)
+#             #to_predict_data_shape:(n,cropsize,cropsize,cropsize,1)
+#             #imposing wedge to every cubes
+#             #data=wedge_imposing(data)
+#             num_batches = data.shape[0]
+#             if num_batches%N == 0:
+#                 append_number = 0
+#             else:
+#                 append_number = N - num_batches%N
+#             data = np.append(data, data[0:append_number], axis = 0)
+#             num_big_batch = data.shape[0]//N
+#             outData = np.zeros(data.shape)
+#             for i in tqdm(range(num_big_batch)):
+#                 outData[i*N:(i+1)*N] = model.predict(data[i*N:(i+1)*N], batch_size= batchsize,verbose=0)
+#             outData = outData[0:num_batches]
+#             # outData=model.predict(data, batch_size= batchsize,verbose=1)
 
-            # outData = outData[0:num_batches]
-            outData=reform_ins.restore_from_cubes_new(outData.reshape(outData.shape[0:-1]), cubesize, cropsize)
-            outData=np.around(outData).astype(np.uint8)
-            with mrcfile.new(output, overwrite=True) as output_mrc:
-                output_mrc.set_data(outData)
-    return 0
+#             # outData = outData[0:num_batches]
+#             outData=reform_ins.restore_from_cubes_new(outData.reshape(outData.shape[0:-1]), cubesize, cropsize)
+#             outData=np.around(outData).astype(np.uint8)
+#             with mrcfile.new(output, overwrite=True) as output_mrc:
+#                 output_mrc.set_data(outData)
+#     return 0
 
 def predict_new(mrc,output,model,sidelen=128,neighbor_in=5,neighbor_out=1, batch_size=8,gpuID='0'):
     import os

@@ -1,11 +1,8 @@
 '''
 
 '''
-from IsoNet.preprocessing.cubes import create_cube_seeds, crop_cubes
 import mrcfile
 import numpy as np
-from IsoNet.util.norm import normalize
-import os
 from skimage.morphology import opening,closing, disk
 from tensorflow.keras.utils import Sequence
 
@@ -21,44 +18,22 @@ class DataWrapper(Sequence):
        idx = slice(i*self.batch_size,(i+1)*self.batch_size)
        return self.X[idx]
 
-def gene_train_data(settings):
-    with mrcfile.open(settings.orig_tomo) as o:
-        orig_tomo=o.data 
-    orig_tomo = normalize(-orig_tomo,percentile = True)
-    with mrcfile.open(settings.mask_tomo) as m:
-        mask_tomo=m.data
+def normalize(x, percentile = True, pmin=4.0, pmax=96.0, axis=None, clip=False, eps=1e-20):
+    """Percentile-based image normalization."""
 
-    if settings.sample_mask != None:
-        with mrcfile.open(settings.sample_mask) as sm:
-            sample_mask = sm.data
+    if percentile:
+        mi = np.percentile(x,pmin,axis=axis,keepdims=True)
+        ma = np.percentile(x,pmax,axis=axis,keepdims=True)
+        out = (x - mi) / ( ma - mi + eps )
+        out = out.astype(np.float32)
+        if clip:
+            return np.clip(out,0,1)
+        else:
+            return out
     else:
-        sample_mask = np.ones(orig_tomo.shape)
-    #create random center seeds and crop subtomos
-    #10% ncube will be saved as test_set
-    seeds1=create_cube_seeds(orig_tomo,settings.ncube,settings.cropsize,mask = sample_mask)
-    seeds2=create_cube_seeds(orig_tomo,int(settings.ncube*0.1),settings.cropsize,mask = sample_mask)
-
-    orig_subtomos=crop_cubes(orig_tomo,seeds1,settings.cropsize)
-    mask_subtomos=crop_cubes(mask_tomo,seeds1,settings.cropsize)
-
-    orig_test_subtomos=crop_cubes(orig_tomo,seeds2,settings.cropsize)
-    mask_test_subtomos=crop_cubes(mask_tomo,seeds2,settings.cropsize)
-
-    for j,s in enumerate(orig_subtomos):
-        with mrcfile.new('{}/train_x/{}_{:0>6d}.mrc'.format('./data', 'subtomo_x',j), overwrite=True) as output_mrc:
-            output_mrc.set_data(s.astype(np.float32))
-    
-    for j,s in enumerate(mask_subtomos):
-        with mrcfile.new('{}/train_y/{}_{:0>6d}.mrc'.format('./data', 'subtomo_y',j), overwrite=True) as output_mrc:
-            output_mrc.set_data(s) 
-
-    for j,s in enumerate(orig_test_subtomos):
-        with mrcfile.new('{}/test_x/{}_{:0>6d}.mrc'.format('./data', 'test_x',j), overwrite=True) as output_mrc:
-            output_mrc.set_data(s.astype(np.float32)) 
-
-    for j,s in enumerate(mask_test_subtomos):
-        with mrcfile.new('{}/test_y/{}_{:0>6d}.mrc'.format('./data', 'test_y',j), overwrite=True) as output_mrc:
-            output_mrc.set_data(s) 
+        out = (x-np.mean(x))/np.std(x)
+        out = out.astype(np.float32)
+        return out
 
 def gene_2d_training_data(tomo,mask,sample_mask=None,num=100,sidelen=128,neighbor_in=5, neighbor_out=1):
     with mrcfile.open(tomo) as o:
