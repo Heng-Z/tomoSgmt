@@ -6,7 +6,7 @@ import mrcfile
 # from mwr.models.unet2 import train3D_seq
 import numpy as np
 import os
-from tomoSgmt.bin.utils import gene_train_data, gene_2d_training_data
+from tomoSgmt.bin.utils import  gene_2d_training_data
 from tomoSgmt.unet.unet2D import build_compiled_model
 import tensorflow as tf
 if __name__=='__main__':

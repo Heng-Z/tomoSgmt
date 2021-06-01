@@ -106,8 +106,8 @@ class Patch:
     
     def to_patches(self,sidelen=128,overlap_rate = 0.25,neighbor=5):
         effect_len = int(sidelen * (1-overlap_rate))
-        n1 = (self.sp[1] - sidelen)//effect_len + 2
-        n2 = (self.sp[2] - sidelen)//effect_len + 2
+        n1 = (self.sp[1] - sidelen)//effect_len + 3
+        n2 = (self.sp[2] - sidelen)//effect_len + 3 # changed from +2 -> +3  to pad more
         n0 = self.sp[0]
         pad_len1 = (n1-1)*effect_len + sidelen - self.sp[1]
         pad_len2 = (n2-1)*effect_len + sidelen - self.sp[2]
@@ -138,6 +138,8 @@ class Patch:
         sidelen = self.sidelen
         effect_len = self.effect_len
         sp = self.sp
+        half1 = (sidelen - effect_len)//2
+        half2 = sidelen - effect_len - half1
         # neighbor = self.neighbor
         # tomo_padded = np.zeros(self.padded_dim)
         tomo_padded = np.zeros((sp[0] + neighbor-neighbor%2,self.padded_dim[1],self.padded_dim[2]))
@@ -149,8 +151,10 @@ class Patch:
                                 j*effect_len:j * effect_len + sidelen]
                     # print('brop one_patch',one_patch.shape)
                     tomo_padded[ k-neighbor//2:k-neighbor//2+neighbor,
-                                 i*effect_len:i * effect_len + sidelen,
-                                j*effect_len:j * effect_len + sidelen] += patch_list[(k-neighbor//2)*n1*n2 + i*n2 + j]
+                                 i*effect_len + half1 :i * effect_len + sidelen - half2,
+                                j*effect_len + half1 : j * effect_len + sidelen - half2] += \
+                                    patch_list[(k-neighbor//2)*n1*n2 + i*n2 + j][:,half1:-half2,half1:-half2] 
+                                    # changed the masking assignment patch size from  (neighbor,sidelen,sidelen) to (nieghbor,effective_len,effective_len)
             # print('k and index:',k,k*n1*n2 + i*n2 + j)
         # tomo_padded = (tomo_padded>0).astype(np.uint8)
         pad_len1 = (n1-1)*effect_len + sidelen - self.sp[1]
