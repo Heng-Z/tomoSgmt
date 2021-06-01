@@ -6,6 +6,8 @@ import sys
 from scipy.sparse import csr_matrix
 import json
 from tomoSgmt.bin.sgmt_predict import predict_new
+import math
+
 def run_mwr_predict(orig,outfile,model,weight,cubesize,cropsize,gpuID,batchsize):
     # cmd = 'mwr3D_predict {} {} --model {} --weight {} --cubesize {} --cropsize {} --gpuID {} --batchsize {}'.format(orig, outfile, model, weight, cubesize, cropsize, gpuID, batchsize)
     # os.system(cmd)
@@ -54,9 +56,15 @@ def morph_process(mask,elem_len=3,radius=15,save_labeled=None):
     
     return vesicle_list
 
-def vesicle_measure(vesicle_list,min_radius,outfile):
+def vesicle_measure(vesicle_list,min_radius,outfile, outfile_in):
     from tomoSgmt.bin.ellipsoid import ellipsoid_fit as ef
     results = []
+    results_in = []
+    results_out = []
+    CH = Graham_scan(P)
+    global in_count
+    in_count = 0
+ 
     def if_normal(radii,threshold=0.15):
         if np.std(radii)/np.mean(radii) >threshold:
             a = False
@@ -72,14 +80,33 @@ def vesicle_measure(vesicle_list,min_radius,outfile):
         info={'name':'vesicle_'+str(i),'center':center.tolist(),'radii':radii.tolist(),'evecs':evecs.tolist()}
         if if_normal(radii):
             results.append(info)
+            #####################################
+            #check whether a vesicle in given presyn
+            c = np.delete(center, 0)
+            c[0], c[1] = c[1], c[0]
+            if Check(CH, len(CH), c):
+                results_in.append(info)
+                print('in vesicle {}'.format(i))
+                in_count = in_count+1
+            else:
+                results_out.append(info)
+            #####################################
         else:
-            print('bad vescle {}'.format(i))
+            print('bad vesicle {}'.format(i))
     #return vesicle information dict and save as json
     vesicle_info={'vesicles':results}
+
+    in_vesicle_info={'vesicles':results_in}
+
     if outfile is not None:
         with open(outfile,"w") as out:
             json.dump(vesicle_info,out)
-    return vesicle_info
+
+    if outfile_in is not None:
+        with open(outfile_in,"w") as out_in:
+            json.dump(in_vesicle_info, out_in)
+
+    return [vesicle_info, in_vesicle_info]
 
 def compute_M(data):
     cols = np.arange(data.size)
@@ -129,6 +156,123 @@ def vesicle_rendering(vesicle_file,tomo_dims):
     vesicle_tomo = closing(vesicle_tomo,cube(3))
     return vesicle_tomo[0:tomo_dims[0],0:tomo_dims[1],0:tomo_dims[2]]
 
+#############################################
+def get_bottom_point(points):
+    #get the first point for Graham_scan
+    #cuz the farthest point must be one of the vertex of convex hull
+    min_index = 0
+    n = len(points)
+    for i in range(0, n):
+        if points[i][1] < points[min_index][1] or (points[i][1] == points[min_index][1] and points[i][0] < points[min_index][0]):
+            min_index = i
+    return min_index
+ 
+ 
+def sort_polar_angle_cos(points, center_point):
+    #sort by polar angle with center point(with cos value)
+    n = len(points)
+    cos_value = []
+    rank = []
+    norm_list = []
+    for i in range(0, n):
+        point_ = points[i]
+        point = [point_[0]-center_point[0], point_[1]-center_point[1]]
+        rank.append(i)
+        norm_value = math.sqrt(point[0]*point[0] + point[1]*point[1])
+        norm_list.append(norm_value)
+        if norm_value == 0:
+            cos_value.append(1)
+        else:
+            cos_value.append(point[0] / norm_value)
+ 
+    for i in range(0, n-1):
+        index = i + 1
+        while index > 0:
+            if cos_value[index] > cos_value[index-1] or (cos_value[index] == cos_value[index-1] and norm_list[index] > norm_list[index-1]):
+                temp = cos_value[index]
+                temp_rank = rank[index]
+                temp_norm = norm_list[index]
+                cos_value[index] = cos_value[index-1]
+                rank[index] = rank[index-1]
+                norm_list[index] = norm_list[index-1]
+                cos_value[index-1] = temp
+                rank[index-1] = temp_rank
+                norm_list[index-1] = temp_norm
+                index = index-1
+            else:
+                break
+    sorted_points = []
+    for i in rank:
+        sorted_points.append(points[i])
+ 
+    return sorted_points
+ 
+ 
+def vector_angle(vector):
+
+    norm_ = math.sqrt(vector[0]*vector[0] + vector[1]*vector[1])
+    if norm_ == 0:
+        return 0
+ 
+    angle = math.acos(vector[0]/norm_)
+    if vector[1] >= 0:
+        return angle
+    else:
+        return 2*math.pi - angle
+ 
+
+def Cross(p1, p2, p0):
+
+    return ((p1[0]-p0[0])*(p2[1]-p0[1])-(p2[0]-p0[0])*(p1[1]-p0[1]))
+
+    
+def Graham_scan(points):
+    #output a vertex set by anticlockwise of convex hull
+
+    bottom_index = get_bottom_point(points)
+    bottom_point = points.pop(bottom_index)
+    sorted_points = sort_polar_angle_cos(points, bottom_point)
+ 
+    m = len(sorted_points)
+ 
+    stack = []
+    stack.append(bottom_point)
+    stack.append(sorted_points[0])
+    stack.append(sorted_points[1])
+ 
+    for i in range(2, m):
+        length = len(stack)
+        top = stack[length-1]
+        next_top = stack[length-2]
+        v1 = [sorted_points[i][0]-next_top[0], sorted_points[i][1]-next_top[1]]
+        v2 = [top[0]-next_top[0], top[1]-next_top[1]]
+        v0 = [0, 0]
+        
+        while Cross(v1, v2, v0) >= 0:
+            stack.pop()
+            length = len(stack)
+            top = stack[length-1]
+            next_top = stack[length-2]
+            v1 = [sorted_points[i][0] - next_top[0], sorted_points[i][1] - next_top[1]]
+            v2 = [top[0] - next_top[0], top[1] - next_top[1]]
+ 
+        stack.append(sorted_points[i])
+ 
+    return stack
+
+
+def Check(CH, n, p_che):
+    #get vertex from Graham_scan, if checking point is in 
+     #the hull, its multicross with vertex by sort must be positive
+    for i in range(n-1):
+        
+        if (Cross(CH[i], CH[i+1], p_che)) < 0:
+            return False
+    if (Cross(CH[n-1], CH[0], p_che)) > 0:
+        return True
+    else:
+        return False
+
 
 if __name__ == "__main__":
     import argparse
@@ -136,6 +280,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('--tomo_file', type=str, default=None, help='Your original tomo')
     parser.add_argument('--output_file', type=str, default=None, help='output vesicles file name (xxx.json)')
+    parser.add_argument('--output_file_in_presyn', type=str, default=None, help='output vesicles in presyn file name (xxx.json)')
     parser.add_argument('--dir', type=str, default='./', help='destination')
     parser.add_argument('--mwr_file', type=str, default=None, help='the output vesicle mask file name')
     parser.add_argument('--mask_file', type=str, default=None, help='the output vesicle mask file name')
@@ -146,6 +291,7 @@ if __name__ == "__main__":
     parser.add_argument('--neighbor_out', type=int, default=1, help='number of neighbor channels')
     parser.add_argument('--sidelen', type=int, default=128, help='side length during 2D training')
     parser.add_argument('--render', type=str, default=None, help='if draw fitted vesicles on a new tomo')
+    parser.add_argument('--render_in', type=str, default=None, help='if draw fitted vesicles which in presyn on a new tomo')
     parser.add_argument('--batchsize', type=int, default=8, help='batch size')
     parser.add_argument('--min_radius', type=int, default=10, help='minimal radius of targeting vesicles')
     args = parser.parse_args()
@@ -160,6 +306,25 @@ if __name__ == "__main__":
     # if args.mwrmodel is not None:# if input is original tomo, do missing wedge correction first
     #     mwr_out = args.dir+'/'+root_name+'-mwr.mrc'
     #     run_mwr_predict(args.tomo_file, args.mwr_file, args.mwrmodel, args.mwrweight, args.cubesize, args.cropsize, args.gpuID,args.batchsize)
+    
+    ############################################
+    
+    P = []
+    s = 'model2point area.mod area.point'
+    pwd = os.system(s)
+    with open('area.point','r') as f:
+        line = f.read()
+        line = line.split()
+        point = np.reshape(line,(-1, 3))
+        p = np.delete(point, 2, axis=1) #delete z value
+        tmp = p.tolist()
+        for poi in tmp:
+            poi = list(map(int, poi))
+            P.append(poi)
+            
+        print(P)
+    ############################################
+    
     
     if args.sgmtmodel is not None:
         if args.mask_file is None:
@@ -176,9 +341,17 @@ if __name__ == "__main__":
     print('begin morph process')
     vesicle_list = morph_process(args.mask_file,radius=min_radius)
     print('done morph process')
-    vesicle_info = vesicle_measure(vesicle_list,min_radius,args.output_file)
+    [vesicle_info, in_vesicle_info] = vesicle_measure(vesicle_list,min_radius,args.output_file,args.output_file_in_presyn)
     print('done vesicle measuring')
+   
+    print('number of vesicle in given presyn:{}'.format(in_count))
+    #print(results_in)
     if args.render is not None:
         ves_tomo = vesicle_rendering(args.output_file,shape)
         with mrcfile.new(args.render,overwrite=True) as n:
             n.set_data(ves_tomo)
+    
+    if args.render_in is not None:
+        ves_in_tomo = vesicle_rendering(args.output_file_in_presyn, shape)
+        with mrcfile.new(args.render_in, overwrite=True) as n_in:
+            n_in.set_data(ves_in_tomo)
