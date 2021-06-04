@@ -11,12 +11,6 @@ from tomoSgmt.unet.unet2D import build_compiled_model
 import tensorflow as tf
 if __name__=='__main__':
 
-    ##########Hyper-parameters:
-    neighbor_in = 7
-    neighbor_out = 3
-    sidelen=128
-    #########
-
     import os
     import sys
     sys.path.insert(0,os.getcwd()) 
@@ -24,6 +18,11 @@ if __name__=='__main__':
     settings.ngpus = len(settings.gpuID.split(','))
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"]=settings.gpuID  # specify which GPU(s) to be used
+##########Hyper-parameters:
+    neighbor_in = int(settings.neighbor_in)
+    neighbor_out = int(settings.neighbor_out)
+    sidelen= int(settings.sidelen)
+#########
     # if not settings.cropped:
     # if not os.path.isdir(settings.data_folder):
     #     print('data_folder does not exits, mkdir')
