@@ -1,0 +1,7 @@
+example/
+results/
+mwrvesicle/
+tomoset/
+utils/*.mrc
+utils/*.rec
+__pycache__
