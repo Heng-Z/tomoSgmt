@@ -19,3 +19,12 @@ steps_per_epoch = 100
 
 # loss='mse'
 # last_activation='linear'
+
+testtomo = 'pp0312'
+model = 'model_nb7-3'
+
+vesicle_file = '/home/zhenhang/sgmt_test/tomoSgmt/example/test_2021Jan/t208/'+testtomo+'/demo/'+testtomo+'-bin8-wbp_corrected-vesicle-in-area.json'
+#vesicle_file = '/home/zhenhang/sgmt_test/tomoSgmt/example/test_2021Jan/t208/'+testtomo+'/demo/'+testtomo+'_vesicle_in.json'
+
+ves_xml = '/home/zhenhang/sgmt_test/tomoSgmt/example/test_2021Jan/t208/'+testtomo+'/demo/vesicle_area.xml'
+binv = 2

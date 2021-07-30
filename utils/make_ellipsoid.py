@@ -20,7 +20,7 @@ def ellipsoid_point(radii,trans,rot_matrix,eps=0.03):
     out = np.round(cloud_trans)
     return out.astype(np.int16)
 
-def ifnormal(radii,threshold=0.15):
+def ifnormal(radii,threshold=0.4):
     if np.std(radii)/np.mean(radii) >threshold:
         a = False
     else: 

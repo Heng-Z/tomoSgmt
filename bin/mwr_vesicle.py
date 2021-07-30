@@ -8,8 +8,8 @@ from scipy.sparse import csr_matrix
 import json
 from tomoSgmt.bin.sgmt_predict import predict_new
 import math
-from tomoSgmt.bin.post_proc import morph_process, vesicle_measure, vesicle_rendering
-
+#from tomoSgmt.bin.post_proc import morph_process, vesicle_measure, vesicle_rendering
+from tomoSgmt.bin.morph import morph_process, vesicle_measure, vesicle_rendering
   
 def str2bool(v):
     if isinstance(v, bool):

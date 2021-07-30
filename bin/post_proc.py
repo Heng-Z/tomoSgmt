@@ -7,7 +7,7 @@ import json
 from tomoSgmt.bin.sgmt_predict import predict_new
 import math
 
-def morph_process(mask,elem_len=3,radius=15,save_labeled=None):
+def morph_process(mask,elem_len=1,radius=10,save_labeled=None):
     # 1. closing and opening process of vesicle mask. 2. label the vesicles.
     # 3. exclude fasle vesicles by counting their volumes and thresholding, return only vesicle binary mask
     # 4. extract boundaries and labels them
@@ -18,6 +18,8 @@ def morph_process(mask,elem_len=3,radius=15,save_labeled=None):
         tomo_mask = f.data 
     # transform mask into uint8
     bimask = np.round(tomo_mask).astype(np.uint8)
+    #closing_opening = closing(opening(bimask,cube(elem_len)),cube(elem_len+2))
+    #closing_opening = opening(closing(bimask, cube(elem_len+2)),cube(elem_len))
     closing_opening = closing(opening(bimask,cube(elem_len)),cube(elem_len))
     # label all connected regions
     labeled = label(closing_opening)
