@@ -19,7 +19,6 @@ then, in demo dir, some useful file will be generated such as (something new lis
 
 #Some scripts new:
 
-
 1. random_erase.py
 used for train data(origin tomo), generate N1 2d squares and N2 3d cubes
 
