@@ -32,14 +32,38 @@ if __name__=='__main__':
     #         os.makedirs('{}/{}'.format(settings.data_folder, d))
     #     # gene_train_data(settings)
     if type(settings.orig_tomo) is list:
-        train_data_list = []
-        test_data_list = []
+        # train_data_list = []
+        # test_data_list = []
+        # for i in range(len(settings.orig_tomo)):
+        #     train, test = gene_2d_training_data(settings.orig_tomo[i],settings.mask_tomo[i],sample_mask=settings.sample_mask[i],num=400,sidelen=sidelen,neighbor_in=neighbor_in,neighbor_out = neighbor_out)
+        #     train_data_list.append(train)
+        #     test_data_list.append(test)
+        # train_data = np.vstack(train_data_list)
+        # test_data = np.vstack(test_data_list)
+        orig_tomo_list = []
+        mask_tomo_list = []
+        sample_mask_list = []
         for i in range(len(settings.orig_tomo)):
-            train, test = gene_2d_training_data(settings.orig_tomo[i],settings.mask_tomo[i],sample_mask=settings.sample_mask[i],num=400,sidelen=sidelen,neighbor_in=neighbor_in,neighbor_out = neighbor_out)
-            train_data_list.append(train)
-            test_data_list.append(test)
-        train_data = np.vstack(train_data_list)
-        test_data = np.vstack(test_data_list)
+            with mrcfile.open(settings.orig_tomo[i]) as o:
+                orig_tomo = o.data
+                orig_tomo_list.append(orig_tomo)
+            with mrcfile.open(settings.mask_tomo[i]) as m:
+                mask_tomo = m.data
+                mask_tomo_list.append(mask_tomo)
+            with mrcfile.open(settings.sample_mask[i]) as s:
+                sample_mask = s.data
+                sample_mask_list.append(sample_mask)
+        orig_stack = np.vstack(orig_tomo_list)
+        mask_stack = np.vstack(mask_tomo_list)
+        sample_stack = np.vstack(sample_mask_list)
+        with mrcfile.new('orig_stack.mrc', overwrite=True) as o:
+            o.set_data(orig_stack)
+        with mrcfile.new('mask_stack.mrc', overwrite=True) as m:
+            m.set_data(mask_stack)
+        with mrcfile.new('sample_stack.mrc', overwrite=True) as s:
+            s.set_data(sample_stack)
+        train_data, test_data = gene_2d_training_data('orig_stack.mrc', 'mask_stack.mrc', 'sample_stack.mrc', num=400, sidelen = sidelen, neighbor_in=neighbor_in,neighbor_out = neighbor_out)
+
     else:
         train_data, test_data = gene_2d_training_data(settings.orig_tomo,settings.mask_tomo,sample_mask=settings.sample_mask,num=400,sidelen=sidelen,neighbor_in=neighbor_in,neighbor_out = neighbor_out)
 
