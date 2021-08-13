@@ -1,3 +1,5 @@
+#! user/bin/env python3
+
 import os
 import mrcfile
 import numpy as np
@@ -8,115 +10,134 @@ import json
 import math
 
 def morph_process(mask,elem_len=1,radius=10,save_labeled=None):
-	# 1. closing and opening process of vesicle mask. 2. label the vesicles.
-	# 3. exclude fasle vesicles by counting their volumes and thresholding, return only vesicle binary mask
-	# 4. extract boundaries and labels them
-	# 5. extract labeled individual vesicle boundary, convert into points vectors and output them.
-	from skimage.morphology import opening, closing, erosion, cube, dilation
-	from skimage.measure import label
-	with mrcfile.open(mask) as f:
-		tomo_mask = f.data 
-	# transform mask into uint8
-	bimask = np.round(tomo_mask).astype(np.uint8)
-	kernel_xy = np.reshape([1 for i in range(9)], (3, 3, 1))
-	closing_opening_xy = closing(bimask, kernel_xy)
+    # 1. closing and opening process of vesicle mask. 2. label the vesicles.
+    # 3. exclude fasle vesicles by counting their volumes and thresholding, return only vesicle binary mask
+    # 4. extract boundaries and labels them
+    # 5. extract labeled individual vesicle boundary, convert into points vectors and output them.
+    from skimage.morphology import opening, closing, erosion, cube, dilation
+    from skimage.measure import label
+    with mrcfile.open(mask) as f:
+        tomo_mask = f.data 
+    # transform mask into uint8
+    bimask = np.round(tomo_mask).astype(np.uint8)
+
+    area_thre = radius**3
+    labeled_pre = label(bimask)
+    pre_pro = np.zeros(labeled_pre.shape)
+    idx_pre = get_indices_sparse(labeled_pre)
+    num_pre = np.max(labeled_pre)
+
+    for i in range(1, num_pre+1):
+        if idx_pre[i][0].shape[0] > area_thre*15:
+            pre_pro[idx_pre[i][0],idx_pre[i][1],idx_pre[i][2]] = 1
+            labeled_pre[idx_pre[i][0],idx_pre[i][1],idx_pre[i][2]] = 0
+    labeled_pre[labeled_pre > 1] = 1
+
+    kernel_pre = cube(11)
+    pre_pro = opening(pre_pro, kernel_pre)
+    pre_pro = erosion(pre_pro, cube(2))
+    labeled_pre_pro = label(pre_pro) #process linked vesicles from mask, Part 1
+
+    kernel_xy = np.reshape([1 for i in range(9)], (3, 3, 1))
+    closing_opening_xy = closing(labeled_pre, kernel_xy)
+    kernel = np.reshape([1 for i in range(12)], (2, 2, 3))
+    closing_opening = closing(closing_opening_xy, kernel)
+
+    # label all connected regions
+    labeled = label(closing_opening) 
+    post_pro = np.zeros(labeled.shape)
     
+    idx = get_indices_sparse(labeled)
+    num = np.max(labeled)
+    
+    for i in range(1,num+1):
+        if idx[i][0].shape[0] < area_thre:    
+            labeled[idx[i][0],idx[i][1],idx[i][2]] = 0
+        elif idx[i][0].shape[0] > area_thre*12:
+            post_pro[idx[i][0],idx[i][1],idx[i][2]] = i #record positon of linked vesicles from closing, Part 2
+            labeled[idx[i][0],idx[i][1],idx[i][2]] = 0 #main vesicles here, Part 3
 
-	#closing_opening = closing(opening(bimask,cube(elem_len)),cube(elem_len+2))
-	#closing_opening = opening(closing(bimask, cube(elem_len+2)),cube(elem_len))
-	#closing_opening = closing(opening(bimask,cube(elem_len)),cube(elem_len))
-	kernel = np.reshape([1 for i in range(12)], (2, 2, 3))
-	closing_opening = closing(closing_opening_xy, kernel)
-	#vesicle_file = merge
-	#closing_opening = dilation(bimask, kernel)
-
-	# label all connected regions
-	labeled = label(closing_opening)
-	idx = get_indices_sparse(labeled)
-	num = np.max(labeled)
-	
-	#########
-	#test area
-	for i in range(1,num+1):
-		if idx[i][0].shape[0] <radius**3 :    
-			labeled[idx[i][0],idx[i][1],idx[i][2]] = 0
-	#########
-	
-	filtered  = (labeled >= 1).astype(np.uint8)
-	print('complete filtering')
-	boundaries = filtered - erosion(filtered,cube(3))
-	# label the boundaries of vesicles 
-	bd_labeled = label(boundaries)
-	#the number of labeled vesicle
-	num = np.max(bd_labeled)
-	#vesicle list elements: np.where return point cloud positions whose shape is (3,N)
-	idx = get_indices_sparse(bd_labeled)
-	vesicle_list = [np.swapaxes(np.array(idx[i]),0,1) for i in range(1,num+1)]
-	# for i in range(1,num+1):
-	#     cloud = np.array(np.where(bd_labeled == i))
-	#     cloud = np.swapaxes(cloud,0,1)
-	#     vesicle_list.append(cloud)
-	
-	return vesicle_list
+    kernel_p = cube(7)
+    post_pro = opening(post_pro, kernel_p)
+    labeled_pre_pro += num
+    labeled_pre_pro[labeled_pre_pro == num] = 0 #re-encode num of label for part 1
+    labeled = labeled + post_pro +labeled_pre_pro
+    
+    filtered  = (labeled >= 1).astype(np.uint8)
+    print('complete filtering')
+    boundaries = filtered - erosion(filtered,cube(3))
+    # label the boundaries of vesicles 
+    bd_labeled = label(boundaries)
+    #the number of labeled vesicle
+    num = np.max(bd_labeled)
+    #vesicle list elements: np.where return point cloud positions whose shape is (3,N)
+    idx = get_indices_sparse(bd_labeled)
+    vesicle_list = [np.swapaxes(np.array(idx[i]),0,1) for i in range(1,num+1)]
+    # for i in range(1,num+1):
+    #     cloud = np.array(np.where(bd_labeled == i))
+    #     cloud = np.swapaxes(cloud,0,1)
+    #     vesicle_list.append(cloud)
+    
+    return vesicle_list
 
 
 def vesicle_measure(vesicle_list,min_radius,outfile, outfile_in_area,area_file=None):
-	from tomoSgmt.bin.ellipsoid import ellipsoid_fit as ef
-	results = []
-	results_in = []
-	# results_out = []
-	P = get_area_points(area_file)
-	CH = Graham_scan(P)
-	global in_count
-	in_count = 0
+    from tomoSgmt.bin.ellipsoid import ellipsoid_fit as ef
+    results = []
+    results_in = []
+    # results_out = []
+    P = get_area_points(area_file)
+    CH = Graham_scan(P)
+    global in_count
+    in_count = 0
 
-	def if_normal(radii,threshold=0.18):
-		if np.std(radii)/np.mean(radii) >threshold:
-			a = False
+    def if_normal(radii,threshold=0.22):
+        if np.std(radii)/np.mean(radii) >threshold:
+            a = False
 
-		########
-		#test area
-		elif np.mean(radii) < 0.6*min_radius or np.mean(radii) > min_radius*4:
-			a = False
-		########
+        ########
+        #test area
+        elif np.mean(radii) < 0.6*min_radius or np.mean(radii) > min_radius*4:
+            a = False
+        ########
 
-		else:
-			a = True
-		return a
+        else:
+            a = True
+        return a
 
-	for i in range(len(vesicle_list)):
-		print('fitting vesicle_',i)
-		[center, evecs, radii]=ef.ellipsoid_fit(vesicle_list[i])
-		info={'name':'vesicle_'+str(i),'center':center.tolist(),'radii':radii.tolist(),'evecs':evecs.tolist()}
-		if if_normal(radii):
-			results.append(info)
-			#####################################
-			#check whether a vesicle in given presyn
-			c = np.delete(center, 0)
-			c[0], c[1] = c[1], c[0]
-			if Check(CH, len(CH), c):
-				results_in.append(info)
-				print('in vesicle {}'.format(i))
-				in_count = in_count+1
-			# else:
-			#     results_out.append(info)
-			#####################################
-		else:
-			print('bad vesicle {}'.format(i))
-	#return vesicle information dict and save as json
-	vesicle_info={'vesicles':results}
-	#
-	in_vesicle_info={'vesicles':results_in}
+    for i in range(len(vesicle_list)):
+        print('fitting vesicle_',i)
+        [center, evecs, radii]=ef.ellipsoid_fit(vesicle_list[i])
+        info={'name':'vesicle_'+str(i),'center':center.tolist(),'radii':radii.tolist(),'evecs':evecs.tolist()}
+        if if_normal(radii):
+            results.append(info)
+            #####################################
+            #check whether a vesicle in given presyn
+            c = np.delete(center, 0)
+            c[0], c[1] = c[1], c[0]
+            if Check(CH, len(CH), c):
+                results_in.append(info)
+                print('in vesicle {}'.format(i))
+                in_count = in_count+1
+            # else:
+            #     results_out.append(info)
+            #####################################
+        else:
+            print('bad vesicle {}'.format(i))
+    #return vesicle information dict and save as json
+    vesicle_info={'vesicles':results}
+    #
+    in_vesicle_info={'vesicles':results_in}
 
-	if outfile is not None:	
-		with open(outfile,"w") as out:
-			json.dump(vesicle_info,out)
+    if outfile is not None:    
+        with open(outfile,"w") as out:
+            json.dump(vesicle_info,out)
 
-	if outfile_in_area is not None:
-		with open(outfile_in_area,"w") as out_in:
-			json.dump(in_vesicle_info, out_in)
+    if outfile_in_area is not None:
+        with open(outfile_in_area,"w") as out_in:
+            json.dump(in_vesicle_info, out_in)
 
-	return [vesicle_info, in_vesicle_info]
+    return [vesicle_info, in_vesicle_info]
 
 
 def vesicle_rendering(vesicle_file,tomo_dims):
@@ -291,15 +312,28 @@ if __name__ == "__main__":
     import argparse
     import json
     parser = argparse.ArgumentParser(description='Process some integers.')
+    parser.add_argument('--tomo', type=str, default=None, help='tomo file')
     parser.add_argument('--mask_file', type=str, default=None, help='the output vesicle mask file name')
     parser.add_argument('--render', type=str, default=None, help='if draw fitted vesicles on a new tomo')
     parser.add_argument('--render_in', type=str, default=None, help='if draw fitted vesicles which in presyn on a new tomo')
     parser.add_argument('--min_radius', type=int, default=10, help='minimal radius of targeting vesicles')
-    parser.add_argument('--area_file', type=str, default=None, help='.point file which defines interested area')
+    parser.add_argument('--area_file', type=str, default='area.point', help='.point file which defines interested area')
     parser.add_argument('--output_file', type=str, default=None, help='output vesicles file name (xxx.json)')
     parser.add_argument('--output_file_in_area', type=str, default=None, help='output vesicles in presyn file name (xxx.json)')
     args = parser.parse_args()
 
+    # set some default files 
+
+    if args.mask_file is None:
+        args.mask_file = args.tomo + '-bin8-wbp_corrected-mask.mrc'
+    if args.render is None:
+        args.render = args.tomo + '-vesicles.mrc'
+    if args.render_in is None:
+        args.render_in = args.tomo + '-vesicles-in.mrc'
+    if args.output_file is None:
+        args.output_file = args.tomo + '_vesicle.json'
+    if args.output_file_in_area is None:
+            args.output_file_in_area = args.tomo + '_vesicle_in.json'
 
     
     
