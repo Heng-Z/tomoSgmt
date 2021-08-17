@@ -21,12 +21,14 @@ def morph_process(mask,elem_len=1,radius=10,save_labeled=None):
     # transform mask into uint8
     bimask = np.round(tomo_mask).astype(np.uint8)
 
+    # extract labeled mask whose area more than a threshold 
+    # (just after prediction, some vesicles will be predicted to be connected)
     area_thre = radius**3
-    labeled_pre = label(bimask)
+    #bimask = dilation(bimask, cube(2))
+    labeled_pre = label(bimask)    
     pre_pro = np.zeros(labeled_pre.shape)
     idx_pre = get_indices_sparse(labeled_pre)
     num_pre = np.max(labeled_pre)
-
     for i in range(1, num_pre+1):
         if idx_pre[i][0].shape[0] > area_thre*15:
             pre_pro[idx_pre[i][0],idx_pre[i][1],idx_pre[i][2]] = 1
@@ -36,41 +38,61 @@ def morph_process(mask,elem_len=1,radius=10,save_labeled=None):
     kernel_pre = cube(11)
     pre_pro = opening(pre_pro, kernel_pre)
     pre_pro = erosion(pre_pro, cube(2))
-    labeled_pre_pro = label(pre_pro) #process linked vesicles from mask, Part 1
+    labeled_pre_pro = label(pre_pro) #process linked vesicles just after prediction, Part 1
 
-    kernel_xy = np.reshape([1 for i in range(9)], (3, 3, 1))
-    closing_opening_xy = closing(labeled_pre, kernel_xy)
-    kernel = np.reshape([1 for i in range(12)], (2, 2, 3))
-    closing_opening = closing(closing_opening_xy, kernel)
+    # for other vesicles
+    if True:
+        kernel_xy = np.reshape([1 for i in range(9)], (3, 3, 1))
+        closing_opening_xy = closing(labeled_pre, kernel_xy)
+    else:
+        closing_opening_xy = labeled_pre
+    if True:
+        kernel = np.reshape([1 for i in range(12)], (2, 2, 3))
+        closing_opening = closing(closing_opening_xy, kernel)
+    else:
+        closing_opening = closing_opening_xy
 
     # label all connected regions
-    labeled = label(closing_opening) 
+    labeled = label(closing_opening)
     post_pro = np.zeros(labeled.shape)
     
     idx = get_indices_sparse(labeled)
     num = np.max(labeled)
-    
+
     for i in range(1,num+1):
         if idx[i][0].shape[0] < area_thre:    
             labeled[idx[i][0],idx[i][1],idx[i][2]] = 0
         elif idx[i][0].shape[0] > area_thre*12:
-            post_pro[idx[i][0],idx[i][1],idx[i][2]] = i #record positon of linked vesicles from closing, Part 2
+            post_pro[idx[i][0],idx[i][1],idx[i][2]] = 1 #record positon of linked vesicles from closing, Part 2
             labeled[idx[i][0],idx[i][1],idx[i][2]] = 0 #main vesicles here, Part 3
 
-    kernel_p = cube(7)
+    labeled = label(labeled) # update num of Part3
+    num = np.max(labeled)
+
+    # process for Part2
+    kernel_p = cube(11)
     post_pro = opening(post_pro, kernel_p)
+    #post_pro = erosion(post_pro, cube(3))
+    labeled_post_pro = label(post_pro)
+    num_post = np.max(labeled_post_pro)
+
+    labeled_post_pro += num
+    labeled_post_pro[labeled_post_pro == num] = 0 # update num of Part2
+
+    num += num_post  # update total num of vesicles(except pre_pro)
     labeled_pre_pro += num
-    labeled_pre_pro[labeled_pre_pro == num] = 0 #re-encode num of label for part 1
-    labeled = labeled + post_pro +labeled_pre_pro
-    
+    labeled_pre_pro[labeled_pre_pro == num] = 0 # update num of label for part 1
+    labeled = labeled + labeled_post_pro + labeled_pre_pro
+    num = np.max(labeled)
+
     filtered  = (labeled >= 1).astype(np.uint8)
     print('complete filtering')
     boundaries = filtered - erosion(filtered,cube(3))
     # label the boundaries of vesicles 
     bd_labeled = label(boundaries)
-    #the number of labeled vesicle
+    # the number of labeled vesicle
     num = np.max(bd_labeled)
-    #vesicle list elements: np.where return point cloud positions whose shape is (3,N)
+    # vesicle list elements: np.where return point cloud positions whose shape is (3,N)
     idx = get_indices_sparse(bd_labeled)
     vesicle_list = [np.swapaxes(np.array(idx[i]),0,1) for i in range(1,num+1)]
     # for i in range(1,num+1):
@@ -94,13 +116,8 @@ def vesicle_measure(vesicle_list,min_radius,outfile, outfile_in_area,area_file=N
     def if_normal(radii,threshold=0.22):
         if np.std(radii)/np.mean(radii) >threshold:
             a = False
-
-        ########
-        #test area
         elif np.mean(radii) < 0.6*min_radius or np.mean(radii) > min_radius*4:
             a = False
-        ########
-
         else:
             a = True
         return a
@@ -111,22 +128,17 @@ def vesicle_measure(vesicle_list,min_radius,outfile, outfile_in_area,area_file=N
         info={'name':'vesicle_'+str(i),'center':center.tolist(),'radii':radii.tolist(),'evecs':evecs.tolist()}
         if if_normal(radii):
             results.append(info)
-            #####################################
-            #check whether a vesicle in given presyn
+            # check whether a vesicle in given presyn
             c = np.delete(center, 0)
             c[0], c[1] = c[1], c[0]
             if Check(CH, len(CH), c):
                 results_in.append(info)
                 print('in vesicle {}'.format(i))
                 in_count = in_count+1
-            # else:
-            #     results_out.append(info)
-            #####################################
         else:
             print('bad vesicle {}'.format(i))
-    #return vesicle information dict and save as json
+    # return vesicle information dict and save as json
     vesicle_info={'vesicles':results}
-    #
     in_vesicle_info={'vesicles':results_in}
 
     if outfile is not None:    
@@ -158,15 +170,15 @@ def vesicle_rendering(vesicle_file,tomo_dims):
             np.array(vesicle['center']),
             np.array(vesicle['evecs'])
         )
-        #ellip_i is an array (N,3) of points of a filled ellipsoid
+        # ellip_i is an array (N,3) of points of a filled ellipsoid
         vesicle_tomo[ellip_i[:,0],ellip_i[:,1],ellip_i[:,2]] = 1
     vesicle_tomo = closing(vesicle_tomo,cube(3))
     return vesicle_tomo[0:tomo_dims[0],0:tomo_dims[1],0:tomo_dims[2]]
 
 
 def get_bottom_point(points):
-    #get the first point for Graham_scan
-    #cuz the farthest point must be one of the vertex of convex hull
+    # get the first point for Graham_scan
+    # cuz the farthest point must be one of the vertex of convex hull
     min_index = 0
     n = len(points)
     for i in range(0, n):
@@ -176,7 +188,7 @@ def get_bottom_point(points):
 
 
 def sort_polar_angle_cos(points, center_point):
-    #sort by polar angle with center point(with cos value)
+    # sort by polar angle with center point(with cos value)
     n = len(points)
     cos_value = []
     rank = []
@@ -234,7 +246,7 @@ def Cross(p1, p2, p0):
 
 
 def Graham_scan(points):
-    #output a vertex set by anticlockwise of convex hull
+    # output a vertex set by anticlockwise of convex hull
 
     bottom_index = get_bottom_point(points)
     bottom_point = points.pop(bottom_index)
@@ -269,10 +281,9 @@ def Graham_scan(points):
 
 
 def Check(CH, n, p_che):
-    #get vertex from Graham_scan, if checking point is in
-     #the hull, its multicross with vertex by sort must be positive
+    # get vertex from Graham_scan, if checking point is in the hull, 
+     #its multicross with vertex by sort must be positive
     for i in range(n-1):
-
         if (Cross(CH[i], CH[i+1], p_che)) < 0:
             return False
     if (Cross(CH[n-1], CH[0], p_che)) > 0:
@@ -288,13 +299,11 @@ def get_area_points(area_file):
         line = f.read()
         line = line.split()
         point = np.reshape(line,(-1, 3))
-        p = np.delete(point, 2, axis=1) #delete z value
+        p = np.delete(point, 2, axis=1) # delete z value
         tmp = p.tolist()
         for poi in tmp:
             poi = list(map(int, poi))
             P.append(poi)
-
-        # print(P)
     return P
 
 
@@ -347,9 +356,7 @@ if __name__ == "__main__":
     print('done morph process')
     [vesicle_info, in_vesicle_info] = vesicle_measure(vesicle_list,min_radius,args.output_file,args.output_file_in_area,area_file=args.area_file)
     print('done vesicle measuring')
-   
-    # print('number of vesicle in given presyn:{}'.format(len()))
-    #print(results_in)
+
     if args.render is not None:
         ves_tomo = vesicle_rendering(args.output_file,shape)
         with mrcfile.new(args.render,overwrite=True) as n:
