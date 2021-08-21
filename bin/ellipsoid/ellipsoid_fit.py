@@ -1,5 +1,6 @@
 import numpy as np
 import math 
+import scipy
 
 
 def data_regularize(data, type="spherical", divs=10):
@@ -147,3 +148,45 @@ def ellipsoid_fit(X):
 
     return center, evecs, radii
 
+
+def ellipse_fit(X):
+    # ellipse fitting by least square method
+    x = X[:, 2]
+    y = X[:, 1]
+    z = X[:, 0]
+    D = np.array([x*x,
+                x*y,
+                y*y,
+                x,
+                y,
+                1 - 0*x])
+    H = np.zeros((6, 6)) 
+    H[0, 2] = 2
+    H[2, 0] = 2
+    H[1, 1] = -1
+    S = np.dot(D, D.T)
+    L, V = scipy.linalg.eig(S, H)
+
+    for i in range(6):
+        if L[i] <= 0:
+            continue
+
+        W = V[:, i]
+        if np.dot(np.dot(W.T, H), W) < 0:
+            continue
+
+        W = np.dot(math.sqrt(1/(np.dot(np.dot(W.T, H), W))), W)
+        [a, b, c, d, e, f] = W
+    
+    Xc = (b*e - 2*c*d)/(4*a*c - b*b)
+    Yc = (b*d - 2*a*e)/(4*a*c - b*b)
+    MA = math.sqrt(2*(a*Xc*Xc + c*Yc*Yc + b*Xc*Yc - f)/(a + c + math.sqrt((a - c)*(a - c) + b*b)))
+    SMA = math.sqrt(2*(a*Xc*Xc + c*Yc*Yc + b*Xc*Yc - f)/(a + c - math.sqrt((a - c)*(a - c) + b*b)))
+    R_pre = (MA + SMA)/2 # just to unify the formal, never use it to analyse any info of the vesicle
+    Zc = np.mean(z)
+
+    center = np.array([Zc, Yc, Xc])
+    radii = np.array([MA, SMA, R_pre])
+    evecs = np.reshape(np.zeros(9), (3, 3)) # just to unity the formal
+
+    return center, evecs, radii
