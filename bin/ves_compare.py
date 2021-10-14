@@ -51,7 +51,8 @@ for vesicle in root:
     # print(ratio)
     radius_diff_ratio = np.abs(np.mean(my_ves_min['radii'])-radius)/radius
     if ratio < 0.6 and abs(radius_diff_ratio) < 0.4 : #origin radio check: radio<0.4, some right-predicted vesicles will be rejected
-        match_dict = {'targe':vesid,'mine':my_ves_min['name'],'distance':ratio,'radius_diff':radius_diff_ratio}
+        #match_dict = {'targe':vesid,'mine':my_ves_min['name'],'distance':ratio,'radius_diff':radius_diff_ratio}
+        match_dict = {'targe':vesid,'mine':my_ves_min['name'],'distance':ratio,'radius_diff':radius_diff_ratio, 'radius_predict':my_ves_min['radii'], 'center':xyz.tolist()}
         matched_pair.append(match_dict)
         radius_diff.append(radius_diff_ratio)
         del my_ves_list[min_dis_ind]
@@ -60,7 +61,7 @@ for vesicle in root:
         miss.write(' '.join(str(x) for x in list(xyz))+'\n')
 
 with open(match_file, 'w') as f:
-    f.write(json.dumps(matched_pair,indent=4, sort_keys=True))
+    f.write(json.dumps(matched_pair,indent=6, sort_keys=True))
 with open(mismatch_file, 'w') as w:
     w.write(json.dumps(mismatched_target,indent=4, sort_keys=True))
 
