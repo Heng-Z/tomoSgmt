@@ -1,6 +1,25 @@
 import numpy as np
 import math 
 import scipy
+from scipy.sparse import csr_matrix
+
+
+#A*x.^2 + B*x.*y + C*y.^2 + D*x + E*y + F
+def solve_ellipse(A,B,C,D,E,F):
+            
+    Xc = (B*E-2*C*D)/(4*A*C-B**2)
+    Yc = (B*D-2*A*E)/(4*A*C-B**2)
+        
+    FA1 = 2*(A*Xc**2+C*Yc**2+B*Xc*Yc-F)
+    FA2 = np.sqrt((A-C)**2+B**2)
+    
+    MA = np.sqrt(FA1/(A+C+FA2)) #长轴
+    SMA= np.sqrt(FA1/(A+C-FA2)) if A+C-FA2!=0 else 0#半长轴
+            
+    if MA<SMA:
+        MA,SMA = SMA,MA
+            
+    return MA, SMA
 
 
 def data_regularize(data, type="spherical", divs=10):
@@ -146,14 +165,24 @@ def ellipsoid_fit(X):
     radii = np.sqrt(1. / np.abs(evals))
     radii *= np.sign(evals)
 
+    '''
+    z0 = center[0]
+    [A, B, C, D, E, F] = [u[0] + u[1] - 1,
+                          u[2],
+                          u[0] - 2*u[1] - 1,
+                          u[3]*z0 + u[5],
+                          u[4]*z0 + u[6],
+                          z0*z0*(u[1] - 2*u[0] -1) + u[7]*z0 + u[8]]
+    MA, SMA = solve_ellipse(A, B, C, D, E, F)
+    
+    return center, evecs, radii, MA, SMA
+    '''
     return center, evecs, radii
 
 
-def ellipse_fit(X):
+def ellipse_fit(x, y, Zc):
     # ellipse fitting by least square method
-    x = X[:, 2]
-    y = X[:, 1]
-    z = X[:, 0]
+    [a, b, c, d, e, f] = [False, False, False, False, False, False]
     D = np.array([x*x,
                 x*y,
                 y*y,
@@ -178,15 +207,25 @@ def ellipse_fit(X):
         W = np.dot(math.sqrt(1/(np.dot(np.dot(W.T, H), W))), W)
         [a, b, c, d, e, f] = W
     
-    Xc = (b*e - 2*c*d)/(4*a*c - b*b)
-    Yc = (b*d - 2*a*e)/(4*a*c - b*b)
-    MA = math.sqrt(2*(a*Xc*Xc + c*Yc*Yc + b*Xc*Yc - f)/(a + c + math.sqrt((a - c)*(a - c) + b*b)))
-    SMA = math.sqrt(2*(a*Xc*Xc + c*Yc*Yc + b*Xc*Yc - f)/(a + c - math.sqrt((a - c)*(a - c) + b*b)))
-    R_pre = (MA + SMA)/2 # just to unify the formal, never use it to analyse any info of the vesicle
-    Zc = np.mean(z)
+    if a and b and c and d and e and f:
+        if 4*a*c-b*b > 0:
+            Xc = (b*e - 2*c*d)/(4*a*c - b*b)
+            Yc = (b*d - 2*a*e)/(4*a*c - b*b)
+            MA = math.sqrt(2*(a*Xc*Xc + c*Yc*Yc + b*Xc*Yc - f)/(a + c + math.sqrt((a - c)*(a - c) + b*b)))
+            SMA = math.sqrt(2*(a*Xc*Xc + c*Yc*Yc + b*Xc*Yc - f)/(a + c - math.sqrt((a - c)*(a - c) + b*b)))
+            R_pre = (MA + SMA)/2 # just to unify the formal, never use it to analyse any info of the vesicle
 
-    center = np.array([Zc, Yc, Xc])
-    radii = np.array([MA, SMA, R_pre])
-    evecs = np.reshape(np.zeros(9), (3, 3)) # just to unity the formal
+            center = np.array([Zc, Yc, Xc])
+            radii = np.array([MA, SMA, R_pre])
+            evecs = np.reshape(np.zeros(9), (3, 3)) # just to unity the formal
+        else:
+            center = np.array([0,0,0])
+            radii = np.array([0,0,0.1])
+            evecs = np.reshape(np.zeros(9), (3, 3))
+
+    else:
+        center = np.array([0,0,0])
+        radii = np.array([0,0,0.1])
+        evecs = np.reshape(np.zeros(9), (3, 3))
 
     return center, evecs, radii
