@@ -20,15 +20,18 @@ def morph_process(mask,elem_len=1,radius=10,save_labeled=None):
         tomo_mask = f.data 
     # transform mask into uint8
     bimask = np.round(tomo_mask).astype(np.uint8)
+    shape = bimask.shape
 
     # extract labeled mask whose area more than a threshold 
     # (just after prediction, some vesicles will be predicted to be connected)
     area_thre = radius**3
     #bimask = dilation(bimask, cube(2))
-    labeled_pre = label(bimask)    
+    labeled_pre = label(bimask)
+    sup_pro = np.zeros(labeled_pre.shape)
     pre_pro = np.zeros(labeled_pre.shape)
     idx_pre = get_indices_sparse(labeled_pre)
     num_pre = np.max(labeled_pre)
+
     for i in range(1, num_pre+1):
         if idx_pre[i][0].shape[0] > area_thre*15:
             pre_pro[idx_pre[i][0],idx_pre[i][1],idx_pre[i][2]] = 1
@@ -62,6 +65,10 @@ def morph_process(mask,elem_len=1,radius=10,save_labeled=None):
     for i in range(1,num+1):
         if idx[i][0].shape[0] < area_thre:    
             labeled[idx[i][0],idx[i][1],idx[i][2]] = 0
+            if idx[i][0].shape[0] > 0.2*area_thre:
+                sup_pro[idx[i][0],idx[i][1],idx[i][2]] = 1 #for very bad prediction, can only do ellipse fit
+        elif idx[i][0].shape[0] <= 2*area_thre and idx[i][0].shape[0] > area_thre:
+            sup_pro[idx[i][0],idx[i][1],idx[i][2]] = 1
         elif idx[i][0].shape[0] > area_thre*12:
             post_pro[idx[i][0],idx[i][1],idx[i][2]] = 1 #record positon of linked vesicles from closing, Part 2
             labeled[idx[i][0],idx[i][1],idx[i][2]] = 0 #main vesicles here, Part 3
@@ -85,6 +92,16 @@ def morph_process(mask,elem_len=1,radius=10,save_labeled=None):
     labeled = labeled + labeled_post_pro + labeled_pre_pro
     num = np.max(labeled)
 
+    # for supplementary proccess
+    labeled_sup_pro = label(sup_pro)
+    sup_filtered = (labeled_sup_pro >= 1).astype(np.uint8)
+    #sup_boundaries = sup_filtered - erosion(sup_filtered, cube(3))
+    sup_bd_labeled = label(sup_filtered)
+    sup_num = np.max(sup_bd_labeled)
+    sup_idx = get_indices_sparse(sup_bd_labeled)
+    vesicle_list_sup = [np.swapaxes(np.array(sup_idx[i]),0,1) for i in range(1, sup_num+1)]
+
+    # for main vesicles
     filtered  = (labeled >= 1).astype(np.uint8)
     print('complete filtering')
     boundaries = filtered - erosion(filtered,cube(3))
@@ -100,21 +117,37 @@ def morph_process(mask,elem_len=1,radius=10,save_labeled=None):
     #     cloud = np.swapaxes(cloud,0,1)
     #     vesicle_list.append(cloud)
     
-    return vesicle_list
+    return vesicle_list, vesicle_list_sup, shape
 
 
-def vesicle_measure(vesicle_list,min_radius,outfile, outfile_in_area,area_file=None):
+def vesicle_measure(vesicle_list, vesicle_list_sup, shape, min_radius, outfile, outfile_in_area, area_file=None):
     from tomoSgmt.bin.ellipsoid import ellipsoid_fit as ef
+    from skimage.morphology import erosion
+    from skimage.measure import label
+
     results = []
     results_in = []
-    # results_out = []
+    sup_results = []
+    sup_results_in = []
     P = get_area_points(area_file)
     CH = Graham_scan(P)
     global in_count
+    global sup_in_count
     in_count = 0
+    sup_in_count = 0
+    bd_shape = 0
 
     def if_normal(radii,threshold=0.22):
         if np.std(radii)/np.mean(radii) >threshold:
+            a = False
+        elif np.mean(radii) < 0.6*min_radius or np.mean(radii) > min_radius*4:
+            a = False
+        else:
+            a = True
+        return a
+    
+    def if_normal_opp(radii, threshold=0.30):
+        if np.std(radii)/np.mean(radii) < threshold or np.std(radii)/np.mean(radii) > 3*threshold:
             a = False
         elif np.mean(radii) < 0.6*min_radius or np.mean(radii) > min_radius*4:
             a = False
@@ -125,8 +158,8 @@ def vesicle_measure(vesicle_list,min_radius,outfile, outfile_in_area,area_file=N
     for i in range(len(vesicle_list)):
         print('fitting vesicle_',i)
         [center, evecs, radii]=ef.ellipsoid_fit(vesicle_list[i])
-        info={'name':'vesicle_'+str(i),'center':center.tolist(),'radii':radii.tolist(),'evecs':evecs.tolist()}
         if if_normal(radii):
+            info={'name':'vesicle_'+str(i),'center':center.tolist(),'radii':radii.tolist(),'evecs':evecs.tolist()}
             results.append(info)
             # check whether a vesicle in given presyn
             c = np.delete(center, 0)
@@ -137,6 +170,44 @@ def vesicle_measure(vesicle_list,min_radius,outfile, outfile_in_area,area_file=N
                 in_count = in_count+1
         else:
             print('bad vesicle {}'.format(i))
+    '''
+    for i in range(len(vesicle_list_sup)):
+        print('fitting ellipse vesicle_',i)
+        z = vesicle_list_sup[i][:, 0]
+        Zc = np.mean(z)
+        X_temp = np.delete(vesicle_list_sup[i], 0, axis=1)
+        X = np.zeros(X_temp.shape)
+        X[:, 0] = X_temp[:, 1]
+        X[:, 1] = X_temp[:, 0]
+        mask = np.zeros((shape[2], shape[1]))
+        for k in range(len(X)):
+            mask[int(X[k][0]), int(X[k][1])] = 1
+        kernel = np.reshape([1, 1, 1, 1, 1, 1, 1, 1, 1], (3, 3))
+        boundaries = mask - erosion(mask, kernel)
+        bd_labeled = label(boundaries)
+        idx = get_indices_sparse(bd_labeled)
+        for id in range(1, len(idx)):
+            bd_shape += idx[id][0].shape[0]
+        bd_x = np.hstack((idx[j][0] for j in range(1, len(idx))))
+        bd_y = np.hstack((idx[j][1] for j in range(1, len(idx))))
+        #vesicle_sup = np.dstack((bd_x, bd_y))
+
+        [center, evecs, radii] = ef.ellipse_fit(bd_x, bd_y, Zc)
+        if if_normal(radii):
+            info_sup = {'name':'vesicle_'+str(i+len(vesicle_list)), 'center':center.tolist(), 'radii':radii.tolist(), 'evecs':evecs.tolist()}
+            #sup_results.append(info_sup)
+            results.append(info_sup)
+            c = np.delete(center, 0)
+            c[0], c[1] = c[1], c[0]
+            if Check(CH, len(CH), c):
+                #sup_results_in.append(info_sup)
+                results_in.append(info_sup)
+                print('in vesicle {}'.format(i+len(vesicle_list)))
+                in_count = in_count + 1
+                sup_in_count = sup_in_count + 1
+        else:
+            print('bad vesicle {}'.format(i+len(vesicle_list)))
+    '''    
     # return vesicle information dict and save as json
     vesicle_info={'vesicles':results}
     in_vesicle_info={'vesicles':results_in}
@@ -329,10 +400,10 @@ if __name__ == "__main__":
     parser.add_argument('--area_file', type=str, default='area.point', help='.point file which defines interested area')
     parser.add_argument('--output_file', type=str, default=None, help='output vesicles file name (xxx.json)')
     parser.add_argument('--output_file_in_area', type=str, default=None, help='output vesicles in presyn file name (xxx.json)')
+    parser.add_argument('--sup',  type=str, default=True, help='whether need supplement info by ellipse fit(True or False)')
     args = parser.parse_args()
 
     # set some default files 
-
     if args.mask_file is None:
         args.mask_file = args.tomo + '-bin8-wbp_corrected-mask.mrc'
     if args.render is None:
@@ -342,19 +413,17 @@ if __name__ == "__main__":
     if args.output_file is None:
         args.output_file = args.tomo + '_vesicle.json'
     if args.output_file_in_area is None:
-            args.output_file_in_area = args.tomo + '_vesicle_in.json'
+        args.output_file_in_area = args.tomo + '_vesicle_in.json'
 
-    
-    
     min_radius = args.min_radius
     # save raw vesicle mask
     with mrcfile.open(args.mask_file) as m:
         bimask =  m.data
     shape = bimask.shape
     print('begin morph process')
-    vesicle_list = morph_process(args.mask_file,radius=min_radius)
+    vesicle_list, vesicle_list_sup, shape = morph_process(args.mask_file,radius=min_radius)
     print('done morph process')
-    [vesicle_info, in_vesicle_info] = vesicle_measure(vesicle_list,min_radius,args.output_file,args.output_file_in_area,area_file=args.area_file)
+    [vesicle_info, in_vesicle_info] = vesicle_measure(vesicle_list, vesicle_list_sup, shape, min_radius, args.output_file, args.output_file_in_area, area_file=args.area_file)
     print('done vesicle measuring')
 
     if args.render is not None:
