@@ -23,8 +23,8 @@ def HSV2RGB(h,s,v):
         return str(v)+','+str(p)+','+str(q)
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process some integers.')
-    parser.add_argument('tomo_file', type=str, default=None, help='Your original tomo')
-    parser.add_argument('vesicle_json', type=str, default=None, help='Your original tomo')
+    parser.add_argument('--tomo_file', type=str, default=None, help='Your original tomo')
+    parser.add_argument('--vesicle_json', type=str, default=None, help='Your original tomo')
     args = parser.parse_args()
     with open(args.vesicle_json) as f:
         ves = json.load(f)
