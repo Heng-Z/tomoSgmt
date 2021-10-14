@@ -66,9 +66,9 @@ if __name__ == "__main__":
         bimask =  m.data
     shape = bimask.shape
     print('begin morph process')
-    vesicle_list = morph_process(args.mask_file,radius=min_radius)
+    [vesicle_list, vesicle_list_sup, shape] = morph_process(args.mask_file,radius=min_radius)
     print('done morph process')
-    [vesicle_info, in_vesicle_info] = vesicle_measure(vesicle_list,min_radius,args.output_file,args.output_file_in_area,area_file=args.area_file)
+    [vesicle_info, in_vesicle_info] = vesicle_measure(vesicle_list, vesicle_list_sup, shape, min_radius,args.output_file,args.output_file_in_area,area_file=args.area_file)
     print('done vesicle measuring')
    
     # print('number of vesicle in given presyn:{}'.format(len()))
